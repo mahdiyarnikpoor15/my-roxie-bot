@@ -10,11 +10,11 @@ from collections import defaultdict
 import google.generativeai as genai
 from dotenv import load_dotenv
 from telegram import (
-    Update, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
+    Update, ChatPermissions
 )
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
-    CallbackQueryHandler, filters, ContextTypes
+    filters, ContextTypes
 )
 from telegram.constants import ParseMode, ChatMemberStatus, ChatAction
 
@@ -26,7 +26,7 @@ load_dotenv()
 # ============================================================
 class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM")
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6IwZnKNvnrE4poVWJfSofMgZyh3V2F1m69UK1xwxoTpxQ")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6J26EbDB89-puTtS3Gliz6e4ife1ztrGcagD3w57Md3_g")
     CREATOR_ID = int(os.getenv("CREATOR_ID", "993028263"))
     MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.0-flash")
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
@@ -35,7 +35,7 @@ class Config:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RoxieBot")
 
-# تنظیم کلید API در پکیج رسمی گوگل جهت پشتیبانی از کلیدهای جدید AQ
+# پیکربندی کلید API جدید متصل به Service Account در پکیج رسمی گوگل
 genai.configure(api_key=Config.GEMINI_API_KEY.strip())
 
 # ============================================================
@@ -122,7 +122,6 @@ class RoxieBot:
                     system_instruction=SYSTEM_PROMPT
                 )
                 
-                # اجرای درخواست در یک Thread مجزا تا ربات هنگ نکند
                 response = await loop.run_in_executor(
                     None,
                     lambda m=model: m.generate_content(
@@ -209,22 +208,12 @@ class RoxieBot:
         if is_group and not is_reply_to_bot and not mentions_bot:
             return
 
-        # دریافت عکس در صورت وجود
-        photo_base64 = None
-        if update.message.photo:
-            try:
-                photo_file = await update.message.photo[-1].get_file()
-                photo_bytes = await photo_file.download_as_bytearray()
-                photo_base64 = base64.b64encode(photo_bytes).decode('utf-8')
-            except Exception as e:
-                logger.error(f"Error downloading photo: {e}")
-
         # نشان دادن حالت typing و رعایت نرخ ۳ ثانیه‌ای
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
         await self.enforce_rate_limit(chat_id)
 
         # تولید پاسخ مستقیم از Google AI Studio
-        response = await self.call_gemini_api(chat_id, user_name, user_text, photo_base64)
+        response = await self.call_gemini_api(chat_id, user_name, user_text)
 
         if response:
             if is_reply_to_bot or not is_group:
