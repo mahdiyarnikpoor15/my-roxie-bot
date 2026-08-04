@@ -1,14 +1,13 @@
 import os
 import logging
 import asyncio
-import io
+import base64
 import time
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
 
-import google.generativeai as genai
-from PIL import Image
+import httpx
 from dotenv import load_dotenv
 from telegram import (
     Update, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
@@ -23,7 +22,7 @@ from telegram.constants import ParseMode, ChatMemberStatus, ChatAction
 load_dotenv()
 
 # ============================================================
-# ⚙️ تنظیمات اصلی
+# ⚙️ تنظیمات اصلی (گوگل ای‌ای استودیو)
 # ============================================================
 class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM")
@@ -35,9 +34,6 @@ class Config:
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RoxieBot")
-
-# تنظیم کلاینت رسمی گوگل
-genai.configure(api_key=Config.GEMINI_API_KEY)
 
 # ============================================================
 # 🧠 شخصیت دخترانه، پررو و باهوش روکسی
@@ -63,7 +59,7 @@ class ChatMemory:
         self.histories: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
         self.max_history = max_history
 
-    def add_message(self, chat_id: int, role: str, parts: List[Any]):
+    def add_message(self, chat_id: int, role: str, parts: List[Dict[str, Any]]):
         if chat_id not in self.histories:
             self.histories[chat_id] = []
         
@@ -83,19 +79,13 @@ class ChatMemory:
         self.histories[chat_id] = []
 
 # ============================================================
-# 🤖 کلاس اصلی ربات روکسی
+# 🤖 کلاس اصلی ربات روکسی (Google AI Studio Gemini)
 # ============================================================
 class RoxieBot:
     def __init__(self):
         self.memory = ChatMemory(max_history=Config.MAX_HISTORY)
         self.last_sent_time: Dict[int, float] = defaultdict(float)
         self.active_groups: Dict[int, str] = {}
-        
-        # مدل رسمی گوگل
-        self.gemini_model = genai.GenerativeModel(
-            model_name=Config.MODEL_NAME,
-            system_instruction=SYSTEM_PROMPT
-        )
 
     async def is_admin(self, chat, user_id: int) -> bool:
         try:
@@ -112,36 +102,67 @@ class RoxieBot:
             await asyncio.sleep(Config.MIN_DELAY_SECONDS - elapsed)
         self.last_sent_time[chat_id] = time.time()
 
-    async def call_gemini_api(self, chat_id: int, user_name: str, text: str, photo_bytes: Optional[bytes] = None) -> Optional[str]:
-        """ارسال درخواست به API رسمی گوگل با کتابخانه google-generativeai"""
-        parts = []
+    async def call_gemini_api(self, chat_id: int, user_name: str, text: str, photo_base64: Optional[str] = None) -> Optional[str]:
+        """ارسال درخواست مستقیم به API گوگل ای‌ای استودیو (Gemini)"""
+        
+        user_parts = []
         if text:
-            parts.append(f"[{user_name}]: {text}")
-        if photo_bytes:
-            try:
-                img = Image.open(io.BytesIO(photo_bytes))
-                parts.append(img)
-            except Exception as e:
-                logger.error(f"Error opening image: {e}")
+            user_parts.append({"text": f"[{user_name}]: {text}"})
+        if photo_base64:
+            user_parts.append({
+                "inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": photo_base64
+                }
+            })
 
-        if not parts:
+        if not user_parts:
             return None
 
-        self.memory.add_message(chat_id, "user", parts)
+        self.memory.add_message(chat_id, "user", user_parts)
         contents = self.memory.get_history(chat_id)
 
-        try:
-            # فراخوانی کتابخانه گوگل غیرهمگام در نخ جداگانه
-            response = await asyncio.to_thread(
-                self.gemini_model.generate_content,
-                contents
-            )
-            if response and response.text:
-                reply_text = response.text.strip()
-                self.memory.add_message(chat_id, "model", [reply_text])
-                return reply_text
-        except Exception as e:
-            logger.error(f"Google Generative AI SDK Error: {e}")
+        # لیست مدل‌های گوگل ای‌ای استودیو جهت تست به ترتیب
+        models_to_try = [Config.MODEL_NAME, "gemini-1.5-flash", "gemini-2.0-flash-exp"]
+
+        payload = {
+            "system_instruction": {
+                "parts": [{"text": SYSTEM_PROMPT}]
+            },
+            "contents": contents,
+            "generationConfig": {
+                "temperature": 0.85,
+                "maxOutputTokens": 800
+            }
+        }
+
+        api_key = Config.GEMINI_API_KEY.strip()
+
+        # هدر اختصاصی گوگل ای‌ای استودیو جهت پشتیبانی از کلیدهای جدید
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for model_name in models_to_try:
+                # ارسال مستقیم به گوگل ای‌ای استودیو
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+                try:
+                    response = await client.post(url, json=payload, headers=headers)
+                    if response.status_code == 200:
+                        data = response.json()
+                        candidates = data.get("candidates", [])
+                        if candidates:
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            if parts:
+                                reply_text = parts[0].get("text", "").strip()
+                                self.memory.add_message(chat_id, "model", [{"text": reply_text}])
+                                return reply_text
+                    else:
+                        logger.error(f"Google AI Studio Error ({model_name}): Status {response.status_code}, Response: {response.text}")
+                except Exception as e:
+                    logger.error(f"Google AI Studio Exception ({model_name}): {e}")
 
         return None
 
@@ -211,11 +232,12 @@ class RoxieBot:
             return
 
         # دریافت عکس در صورت وجود
-        photo_bytes = None
+        photo_base64 = None
         if update.message.photo:
             try:
                 photo_file = await update.message.photo[-1].get_file()
                 photo_bytes = await photo_file.download_as_bytearray()
+                photo_base64 = base64.b64encode(photo_bytes).decode('utf-8')
             except Exception as e:
                 logger.error(f"Error downloading photo: {e}")
 
@@ -223,8 +245,8 @@ class RoxieBot:
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
         await self.enforce_rate_limit(chat_id)
 
-        # تولید پاسخ از SDK رسمی Gemini
-        response = await self.call_gemini_api(chat_id, user_name, user_text, photo_bytes)
+        # تولید پاسخ مستقیم از Google AI Studio
+        response = await self.call_gemini_api(chat_id, user_name, user_text, photo_base64)
 
         if response:
             if is_reply_to_bot or not is_group:
@@ -371,7 +393,7 @@ def main():
     app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), bot.handle_message))
 
     print("==================================================")
-    print("🤖 ربات روکسی با SDK رسمی Google AI راه‌اندازی شد!")
+    print("🤖 ربات روکسی مستقیماً با Google AI Studio راه‌اندازی شد!")
     print(f"👑 سازنده: {Config.CREATOR_ID}")
     print("==================================================")
     
