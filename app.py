@@ -28,7 +28,7 @@ class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6IwZnKNvnrE4poVWJfSofMgZyh3V2F1m69UK1xwxoTpxQ")
     CREATOR_ID = int(os.getenv("CREATOR_ID", "993028263"))
-    MODEL_NAME = os.getenv("MODEL_NAME", "gemini-3.6-flash")
+    MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.0-flash")
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
     MIN_DELAY_SECONDS = 3.0  # فاصله ۳ ثانیه‌ای بین پاسخ‌ها
 
@@ -103,7 +103,7 @@ class RoxieBot:
         self.last_sent_time[chat_id] = time.time()
 
     async def call_gemini_api(self, chat_id: int, user_name: str, text: str, photo_base64: Optional[str] = None) -> Optional[str]:
-        """ارسال درخواست به API Gemini 3.6 Flash با هدرهای استاندارد احراز هویت"""
+        """ارسال درخواست به API Gemini با قابلیت پشتیبان خودکار"""
         
         user_parts = []
         if text:
@@ -122,14 +122,8 @@ class RoxieBot:
         self.memory.add_message(chat_id, "user", user_parts)
         contents = self.memory.get_history(chat_id)
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{Config.MODEL_NAME}:generateContent?key={Config.GEMINI_API_KEY}"
-        
-        # هدرهای پشتیبانی از کلیدهای جدید AQ گوگل
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": Config.GEMINI_API_KEY,
-            "Authorization": f"Bearer {Config.GEMINI_API_KEY}"
-        }
+        # تلاش با مدل ۲ فلش و در صورت نیاز مدل ۱.۵ فلش
+        models_to_try = [Config.MODEL_NAME, "gemini-1.5-flash", "gemini-2.0-flash-exp"]
 
         payload = {
             "system_instruction": {
@@ -142,22 +136,28 @@ class RoxieBot:
             }
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(url, json=payload, headers=headers)
-                if response.status_code == 200:
-                    data = response.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        if parts:
-                            reply_text = parts[0].get("text", "").strip()
-                            self.memory.add_message(chat_id, "model", [{"text": reply_text}])
-                            return reply_text
-                else:
-                    logger.error(f"Gemini API Error Status: {response.status_code}, Response: {response.text}")
-        except Exception as e:
-            logger.error(f"Gemini API Exception: {e}")
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for model_name in models_to_try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={Config.GEMINI_API_KEY}"
+                try:
+                    response = await client.post(url, json=payload, headers=headers)
+                    if response.status_code == 200:
+                        data = response.json()
+                        candidates = data.get("candidates", [])
+                        if candidates:
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            if parts:
+                                reply_text = parts[0].get("text", "").strip()
+                                self.memory.add_message(chat_id, "model", [{"text": reply_text}])
+                                return reply_text
+                    else:
+                        logger.error(f"Gemini API Error ({model_name}): Status {response.status_code}, Response: {response.text}")
+                except Exception as e:
+                    logger.error(f"Gemini API Exception ({model_name}): {e}")
 
         return None
 
@@ -388,7 +388,7 @@ def main():
     app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), bot.handle_message))
 
     print("==================================================")
-    print("🤖 ربات روکسی با Gemini 3.6 Flash راه‌اندازی شد!")
+    print("🤖 ربات روکسی با Gemini 2.0 Flash راه‌اندازی شد!")
     print(f"👑 سازنده: {Config.CREATOR_ID}")
     print(f"🧠 مدل: {Config.MODEL_NAME}")
     print("==================================================")
