@@ -1,4 +1,4 @@
-import os
+[14/05/1405 02:26 ق.ظ] ameretat: import os
 import logging
 import asyncio
 import time
@@ -8,9 +8,7 @@ from collections import defaultdict
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-from telegram import (
-    Update, ChatPermissions
-)
+from telegram import Update, ChatPermissions
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     filters, ContextTypes
@@ -21,24 +19,24 @@ from telegram.constants import ParseMode, ChatMemberStatus, ChatAction
 load_dotenv()
 
 # ============================================================
-# ⚙️ تنظیمات اصلی (گوگل ای‌ای استودیو)
+# ⚙️ تنظیمات اصلی
 # ============================================================
 class Config:
-    TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM")
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6J26EbDB89-puTtS3Gliz6e4ife1ztrGcagD3w57Md3_g")
+    TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     CREATOR_ID = int(os.getenv("CREATOR_ID", "993028263"))
     MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.0-flash")
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
-    MIN_DELAY_SECONDS = 3.0  # فاصله ۳ ثانیه‌ای بین پاسخ‌ها
+    MIN_DELAY_SECONDS = 3.0
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RoxieBot")
 
-# ساخت کلاینت جدید گوگل با پکیج جدید google-genai و کلید AQ
+# ساخت کلاینت گوگل
 ai_client = genai.Client(api_key=Config.GEMINI_API_KEY.strip())
 
 # ============================================================
-# 🧠 شخصیت دخترانه، پررو و باهوش روکسی
+# 🧠 شخصیت روکسی
 # ============================================================
 SYSTEM_PROMPT = """
 # هویت تو: روکسی (Roxie)
@@ -53,10 +51,10 @@ SYSTEM_PROMPT = """
 """
 
 # ============================================================
-# 💾 مدیریت حافظه چت‌ها (حداکثر ۵ پیام اخیر)
+# 💾 مدیریت حافظه چت‌ها
 # ============================================================
 class ChatMemory:
-    def __init__(self, max_history: int = 5):
+    def init(self, max_history: int = 5):
         self.histories: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
         self.max_history = max_history
 
@@ -80,10 +78,10 @@ class ChatMemory:
         self.histories[chat_id] = []
 
 # ============================================================
-# 🤖 کلاس اصلی ربات روکسی (Google AI Studio Gemini)
+# 🤖 کلاس اصلی ربات روکسی
 # ============================================================
 class RoxieBot:
-    def __init__(self):
+    def init(self):
         self.memory = ChatMemory(max_history=Config.MAX_HISTORY)
         self.last_sent_time: Dict[int, float] = defaultdict(float)
         self.active_groups: Dict[int, str] = {}
@@ -101,9 +99,8 @@ class RoxieBot:
         if elapsed < Config.MIN_DELAY_SECONDS:
             await asyncio.sleep(Config.MIN_DELAY_SECONDS - elapsed)
         self.last_sent_time[chat_id] = time.time()
-
-    async def call_gemini_api(self, chat_id: int, user_name: str, text: str) -> Optional[str]:
-        """ارسال درخواست به گوگل با کتابخانه جدید google-genai مخصوص کلیدهای AQ"""
+[14/05/1405 02:26 ق.ظ] ameretat: async def call_gemini_api(self, chat_id: int, user_name: str, text: str) -> Optional[str]:
+        """ارسال درخواست به گوگل با کتابخانه جدید google-genai"""
         user_input = f"[{user_name}]: {text}" if text else f"[{user_name}] عکسی فرستاد."
         self.memory.add_message(chat_id, "user", user_input)
         
@@ -139,7 +136,6 @@ class RoxieBot:
 
         return None
 
-    # --- مدیریت پیام‌ها ---
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message:
             return
@@ -153,12 +149,12 @@ class RoxieBot:
         if chat_type in ['group', 'supergroup']:
             self.active_groups[chat_id] = update.effective_chat.title or f"Group {chat_id}"
 
-        # 🔒 قفل پی‌وی: در چت خصوصی فقط سازنده (ID: 993028263) می‌تواند پیام دهد
+        # قفل پی‌وی
         if chat_type == 'private' and user_id != Config.CREATOR_ID:
             await update.message.reply_text("عزیزم من توی پی‌وی فقط با سازنده‌ام (مهدیار) صحبت می‌کنم! برای چت کردن با من، منو به گروهت اضافه کن 😉")
             return
 
-        # 🔨 تشخیص دستورات زبان طبیعی مدیریت گروه (بدون سلاش)
+        # دستورات زبان طبیعی مدیریت گروه
         if chat_type in ['group', 'supergroup'] and update.message.reply_to_message:
             if await self.is_admin(update.effective_chat, user_id):
                 target_user = update.message.reply_to_message.from_user
@@ -186,10 +182,11 @@ class RoxieBot:
                         await update.message.reply_text("نتونستم بی‌صداش کنم! مطمئن شو دسترسی ادمین دارم.")
                         return
 
-        # 🛑 فیلتر پاسخ در گروه‌ها: فقط زمان منشن، ریپلای یا صدا زدن اسم «روکسی»
-        bot_username = (await context.bot.get_me()).username.lower()
+        # فیلتر پاسخ در گروه‌ها
+[14/05/1405 02:26 ق.ظ] ameretat: bot_username = (await context.bot.get_me()).username.lower()
         is_reply_to_bot = (
             update.message.reply_to_message and
+            update.message.reply_to_message.from_user and
             update.message.reply_to_message.from_user.id == context.bot.id
         )
         mentions_bot = any(
@@ -201,11 +198,11 @@ class RoxieBot:
         if is_group and not is_reply_to_bot and not mentions_bot:
             return
 
-        # نشان دادن حالت typing و رعایت نرخ ۳ ثانیه‌ای
+        # نشان دادن typing و رعایت نرخ
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
         await self.enforce_rate_limit(chat_id)
 
-        # تولید پاسخ مستقیم از Google AI Studio
+        # تولید پاسخ
         response = await self.call_gemini_api(chat_id, user_name, user_text)
 
         if response:
@@ -234,7 +231,7 @@ class RoxieBot:
         self.memory.clear_history(update.effective_chat.id)
         await update.message.reply_text("✅ حافظه کوتاه مدت من توی این چت پاک شد!")
 
-    # --- دستورات مدیریتی ادمین‌های گروه ---
+    # --- دستورات مدیریتی ---
     async def ban_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.is_admin(update.effective_chat, update.effective_user.id):
             await update.message.reply_text("❌ فقط ادمین‌های این گروه می‌تونن از این دستور استفاده کنن!")
@@ -270,8 +267,7 @@ class RoxieBot:
             await update.message.reply_text(f"کاربر {target.first_name} بی‌صدا شد! 🔇")
         except Exception:
             await update.message.reply_text("نتونستم بی‌صدا کنم. مطمئن شو دسترسی ادمین دارم!")
-
-    async def unmute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+[14/05/1405 02:26 ق.ظ] ameretat: async def unmute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.is_admin(update.effective_chat, update.effective_user.id):
             await update.message.reply_text("❌ فقط ادمین‌های این گروه می‌تونن از این دستور استفاده کنن!")
             return
@@ -298,7 +294,7 @@ class RoxieBot:
         except Exception:
             await update.message.reply_text("خطا در رفع بی‌صدا!")
 
-    # --- 👑 دستورات اختصاصی سازنده ربات (ID: 993028263) ---
+    # --- دستورات سازنده ---
     async def groups_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id != Config.CREATOR_ID:
             return
@@ -309,7 +305,7 @@ class RoxieBot:
 
         msg = "📊 *لیست گروه‌هایی که ربات توی اون‌ها عضو هست:*\n\n"
         for g_id, g_title in self.active_groups.items():
-            msg += f"🔹 **{g_title}**\n🆔 `ID: {g_id}`\n\n"
+            msg += f"🔹 {g_title}\n🆔 ID: {g_id}\n\n"
 
         await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
@@ -318,7 +314,7 @@ class RoxieBot:
             return
 
         if not context.args:
-            await update.message.reply_text("لطفاً آیدی گروه را وارد کن! مثال:\n`/leave -100123456789`", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text("لطفاً آیدی گروه را وارد کن! مثال:\n/leave -100123456789", parse_mode=ParseMode.MARKDOWN)
             return
 
         target_chat_id = context.args[0]
@@ -326,7 +322,7 @@ class RoxieBot:
             await context.bot.leave_chat(int(target_chat_id))
             if int(target_chat_id) in self.active_groups:
                 del self.active_groups[int(target_chat_id)]
-            await update.message.reply_text(f"✅ با موفقیت از گروه `{target_chat_id}` خارج شدم!", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(f"✅ با موفقیت از گروه {target_chat_id} خارج شدم!", parse_mode=ParseMode.MARKDOWN)
         except Exception as e:
             await update.message.reply_text(f"❌ خطا در خروج از گروه: {e}")
 
@@ -343,11 +339,13 @@ def main():
     app.add_handler(CommandHandler("ban", bot.ban_command))
     app.add_handler(CommandHandler("mute", bot.mute_command))
     app.add_handler(CommandHandler("unmute", bot.unmute_command))
-
     app.add_handler(CommandHandler("groups", bot.groups_command))
     app.add_handler(CommandHandler("leave", bot.leave_command))
 
-    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), bot.handle_message))
+    app.add_handler(MessageHandler(
+        (filters.TEXT | filters.PHOTO) & (\~filters.COMMAND),
+        bot.handle_message
+    ))
 
     print("==================================================")
     print("🤖 ربات روکسی راه‌اندازی شد!")
@@ -356,5 +354,5 @@ def main():
     
     app.run_polling(drop_pending_updates=True)
 
-if __name__ == "__main__":
+if name == "main":
     main()
