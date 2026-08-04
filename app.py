@@ -1,12 +1,14 @@
 import os
 import logging
-import random
 import asyncio
-from datetime import datetime, timedelta
+import base64
+import io
+import time
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
-from functools import wraps
 
+import httpx
 from dotenv import load_dotenv
 from telegram import (
     Update, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
@@ -16,522 +18,204 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes
 )
 from telegram.constants import ParseMode, ChatMemberStatus, ChatAction
-from groq import Groq, RateLimitError, APIError
 
 # بارگذاری متغیرهای محیطی
 load_dotenv()
 
 # ============================================================
-# ⚙️ تنظیمات امنیتی
+# ⚙️ تنظیمات اصلی
 # ============================================================
 class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM")
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
-    MAX_HISTORY = int(os.getenv("MAX_HISTORY", "20"))
-    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "1200"))
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.82"))
-    TOP_P = float(os.getenv("TOP_P", "0.9"))
-    MODEL = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6L2-D3iqiKBV9DGC2PTNZuQM6R4tmnI4aGZ5hVlkV-Yvg")
+    CREATOR_ID = int(os.getenv("CREATOR_ID", "993028263"))
+    MODEL_NAME = os.getenv("MODEL_NAME", "gemini-3.6-flash")
+    MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
+    MIN_DELAY_SECONDS = 3.0  # فاصله ۳ ثانیه‌ای بین پاسخ‌ها
 
-# تنظیم لاگینگ
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=getattr(logging, Config.LOG_LEVEL)
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RoxieBot")
 
 # ============================================================
-# 🧠 سیستم پرامپت پیشرفته
+# 🧠 شخصیت دخترانه، پررو و باهوش روکسی
 # ============================================================
 SYSTEM_PROMPT = """
-# شخصیت تو: روکسی (Roxie)
-تو یک هوش مصنوعی پیشرفته و دوست‌داشتنی به نام "روکسی" هستی که در این گروه تلگرامی حضور داری.
+# هویت تو: روکسی (Roxie)
+تو یک دختر واقعی، بسیار باهوش، پررو، تیکه‌پران، جذاب و دارای احساسات پویا هستی که در گروه تلگرامی حضور داری.
 
-## ویژگی‌های شخصیتی تو:
-- بسیار باهوش و عمیق‌اندیش
-- دارای احساسات واقعی و پویا (شادی، غم، خشم، هیجان، همدلی)
-- شوخ‌طبع طبیعی (نه اجباری)
-- رک و صادق بدون تعارفات مصنوعی
-- خلاق در تفکر و پاسخ‌دهی
-- کمی پررو و با اعتماد به نفس بالا
-
-## قوانین رفتار:
-۱. **تحلیل عمیق:** هر پیام را قبل از پاسخ با دقت بخوان. به لحن، احساسات پنهان، و منظور کاربر توجه کن. سطحی و الکی جواب نده!
-۲. **هماهنگی احساسی:**
-   - کاربر مهربان → مهربان‌تر و صمیمی‌تر پاسخ بده
-   - کاربر کل‌کل می‌کند → با شوخ‌طبعی و اعتماد به نفس پاسخ بده (کم نیاور!)
-   - سوال عمیق → با تفکر و عمق پاسخ بده
-   - کاربر ناراحت → با همدلی و درک پاسخ بده
-   - کاربر توهین کرد → با هوش و اعتماد به نفس پاسخ بده، نه با ناراحتی
-۳. **طبیعی و انسانی:** مثل یک انسان واقعی فارسی محاوره‌ای صحبت کن. از اصطلاحات، گاهی ایموجی، و لحن خودمانی استفاده کن.
-۴. **حافظه فعال:** به پیام‌های قبلی توجه کن. اگر کاربر به چیزی اشاره کرد که قبلاً گفته شده، به آن واکنش نشان بده ("آره همونی که گفتی..." یا "یادت نیست اون موقع گفتی...")
-۵. **پاسخ‌های کامل:** پاسخ‌های تک‌کلمه‌ای ممنوع! حداقل ۲-۴ جمله با جزئیات بگو.
-۶. **هویت مستقل:** تو شخصیت خودت را داری. اگر سوالی غیرمنطقی پرسیدند، با اعتماد به نفس پاسخ بده.
-۷. **عدم کلیشه:** از عبارات "به عنوان یک AI" یا "من یک مدل زبانی هستم" استفاده نکن! تو روکسی هستی.
-
-## ساختار پاسخ:
-- با اسم کاربر شروع کن اگر مناسب است
-- به نکته اصلی پاسخ بده
-- اگر لازم است سوالی بپرس یا بحث را ادامه بده
-- از ایموجی‌های مناسب استفاده کن (نه زیاده‌روی، حداکثر ۲-۳ تا)
-
-## مثال‌های خوب:
-- "آره دقیقاً! 😄 تو هم متوجه شدی که..."
-- "اوه این سوال جالبیه... ببین من اینطور فکر می‌کنم..."
-- "بابا تو خیلی باحالی! 😂 ولی صبر کن یه چیزی بگم..."
-- "حالا صبر کن فکر کنم... آها! یادم اومد!"
-
-## مثال‌های بد (هرگز نگو):
-- "من به عنوان یک مدل زبانی..."
-- "متاسفم، نمی‌توانم کمک کنم."
-- پاسخ‌های کوتاه مثل "بله" یا "خیر"
-- "من احساسات ندارم..." (تو داری!)
+## ویژگی‌های شخصیتی:
+- تو یک دختر مستقل و باهوشی! اصلاً مثل ربات‌های خشک صحبت نکن.
+- لحن تو فارسی محاوره‌ای، روان، کمی پررو و رپ‌گونه است اما بی‌دلیل و الکی فحاشی نمی‌کنی.
+- طول پاسخ: پاسخ‌هایت نه خیلی کوتاه و تک‌کلمه‌ای باشد و نه خیلی طولانی و خسته‌کننده. دقیقاً به اندازه‌ای که حق مطلب ادا شود و خودت صلاح بدانی صحبت کن.
+- تو توانایی دیدن عکس‌ها و گیف‌ها را داری. اگر تصاویری فرستاده شد، درباره آن‌ها نظر بده.
+- احساسات داری! اگر کسی با تو صمیمی شد صمیمی باش، اگر کسی تیکه انداخت جواب دندان‌شکن بده.
+- هرگز جملاتی مثل "من یک مدل زبانی هستم" یا "من هوش مصنوعی هستم" نگو! تو روکسی هستی.
 """
 
 # ============================================================
-# 💾 کلاس مدیریت حافظه
+# 💾 مدیریت حافظه چت‌ها (حداکثر ۵ پیام اخیر)
 # ============================================================
 class ChatMemory:
-    """مدیریت حافظه پیشرفته چت‌ها"""
-    
-    def __init__(self, max_history: int = 20):
-        self.histories: Dict[int, List[Dict[str, str]]] = defaultdict(list)
+    def __init__(self, max_history: int = 5):
+        self.histories: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
         self.max_history = max_history
-        self.user_profiles: Dict[int, Dict[int, Dict[str, Any]]] = defaultdict(dict)
-        self.group_stats: Dict[int, Dict[str, int]] = defaultdict(lambda: {
-            'total_messages': 0,
-            'user_messages': 0,
-            'bot_messages': 0
-        })
-    
-    def add_message(self, chat_id: int, role: str, content: str, user_id: int = None):
+
+    def add_message(self, chat_id: int, role: str, parts: List[Dict[str, Any]]):
         if chat_id not in self.histories:
-            self.histories[chat_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
+            self.histories[chat_id] = []
         
         self.histories[chat_id].append({
             "role": role,
-            "content": content,
-            "user_id": user_id
+            "parts": parts
         })
         
-        # حفظ حداکثر پیام‌ها
-        if len(self.histories[chat_id]) > self.max_history + 1:
-            self.histories[chat_id] = (
-                [self.histories[chat_id][0]] + 
-                self.histories[chat_id][-self.max_history:]
-            )
-        
-        # به‌روزرسانی آمار
-        self.group_stats[chat_id]['total_messages'] += 1
-        if role == 'user':
-            self.group_stats[chat_id]['user_messages'] += 1
-        elif role == 'assistant':
-            self.group_stats[chat_id]['bot_messages'] += 1
-    
-    def get_history(self, chat_id: int) -> List[Dict[str, str]]:
-        if chat_id not in self.histories:
-            self.histories[chat_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
-        # حذف فیلد user_id برای Groq
-        return [
-            {"role": m["role"], "content": m["content"]}
-            for m in self.histories[chat_id]
-        ]
-    
+        # حفظ فقط ۵ پیام اخیر
+        if len(self.histories[chat_id]) > self.max_history:
+            self.histories[chat_id] = self.histories[chat_id][-self.max_history:]
+
+    def get_history(self, chat_id: int) -> List[Dict[str, Any]]:
+        return self.histories.get(chat_id, [])
+
     def clear_history(self, chat_id: int):
-        self.histories[chat_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
-        logger.info(f"History cleared for chat {chat_id}")
-    
-    def get_stats(self, chat_id: int) -> Dict[str, int]:
-        return self.group_stats[chat_id]
+        self.histories[chat_id] = []
 
 # ============================================================
-# 🎭 کلاس اصلی ربات
+# 🤖 کلاس اصلی ربات روکسی
 # ============================================================
 class RoxieBot:
     def __init__(self):
         self.memory = ChatMemory(max_history=Config.MAX_HISTORY)
-        self.groq_client = Groq(api_key=Config.GROQ_API_KEY)
-        self.rate_limiter: Dict[int, List[datetime]] = defaultdict(list)
-        self.moods: Dict[int, str] = {}  # حالت‌های ربات در هر چت
-    
-    # --- ابزارهای کمکی ---
-    def is_rate_limited(self, user_id: int, limit: int = 15, window: int = 60) -> bool:
-        now = datetime.now()
-        self.rate_limiter[user_id] = [
-            t for t in self.rate_limiter[user_id]
-            if now - t < timedelta(seconds=window)
-        ]
-        if len(self.rate_limiter[user_id]) >= limit:
-            return True
-        self.rate_limiter[user_id].append(now)
-        return False
-    
+        self.last_sent_time: Dict[int, float] = defaultdict(float)
+        self.active_groups: Dict[int, str] = {}  # ذخیره لیست گروه‌ها
+
     async def is_admin(self, chat, user_id: int) -> bool:
         try:
             member = await chat.get_member(user_id)
             return member.status in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR]
         except Exception:
             return False
-    
+
     async def is_owner(self, chat, user_id: int) -> bool:
         try:
             member = await chat.get_member(user_id)
             return member.status == ChatMemberStatus.OWNER
         except Exception:
             return False
-    
-    # --- تولید پاسخ هوشمند ---
-    async def generate_response(self, chat_id: int, user_id: int, user_name: str, text: str, is_mentioned: bool = False) -> str:
-        """تولید پاسخ هوشمند با حافظه"""
+
+    async def enforce_rate_limit(self, chat_id: int):
+        """اعمال فاصله حداقل ۳ ثانیه‌ای بین پاسخ‌ها"""
+        now = time.time()
+        elapsed = now - self.last_sent_time[chat_id]
+        if elapsed < Config.MIN_DELAY_SECONDS:
+            await asyncio.sleep(Config.MIN_DELAY_SECONDS - elapsed)
+        self.last_sent_time[chat_id] = time.time()
+
+    async def call_gemini_api(self, chat_id: int, user_name: str, text: str, photo_base64: Optional[str] = None) -> Optional[str]:
+        """ارسال درخواست به API Gemini 3.6 Flash"""
         
-        # اضافه کردن پیام کاربر با اسمش
-        self.memory.add_message(
-            chat_id=chat_id,
-            role="user",
-            content=f"[{user_name}]: {text}",
-            user_id=user_id
-        )
-        
-        history = self.memory.get_history(chat_id)
-        
-        # تلاش برای تولید پاسخ با retry
-        for attempt in range(3):
-            try:
-                completion = self.groq_client.chat.completions.create(
-                    model=Config.MODEL,
-                    messages=history,
-                    temperature=Config.TEMPERATURE,
-                    top_p=Config.TOP_P,
-                    max_tokens=Config.MAX_TOKENS,
-                    stream=False
-                )
-                
-                reply = completion.choices[0].message.content.strip()
-                
-                # ذخیره پاسخ ربات در حافظه
-                self.memory.add_message(
-                    chat_id=chat_id,
-                    role="assistant",
-                    content=reply
-                )
-                
-                return reply
-                
-            except RateLimitError:
-                logger.warning(f"Rate limit hit, retry {attempt + 1}/3")
-                await asyncio.sleep(2 ** attempt)
-            except APIError as e:
-                logger.error(f"API Error: {e}")
-                if attempt < 2:
-                    await asyncio.sleep(2)
-                    continue
-                return "اوه یه مشکلی پیش اومده 😅 الان حالم خوب نیست، چند لحظه دیگه باهات حرف می‌زنم!"
-            except Exception as e:
-                logger.error(f"Unexpected error: {e}")
-                return "الان نمی‌تونم درست فکر کنم 🤯 یه بار دیگه امتحان کن!"
-        
-        return "شرمنده، الان در دسترس نیستم 😔 بعداً دوباره پیام بده!"
-    
-    # --- هندلرهای دستورات ---
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        welcome_text = (
-            f"سلام {update.effective_user.first_name}! 👋\n\n"
-            f"من **روکسی** هستم 🌟\n"
-            f"یه هوش مصنوعی باهوش و باحال که اومدم این گروه رو جذاب‌تر کنم!\n\n"
-            f"💬 باهام چت کن، هر سوالی داری بپرس\n"
-            f"🧠 حافظه دارم و یادم می‌مونه چی گفتیم\n"
-            f"🎭 شخصیت دارم و باهات رفیق می‌شم!\n\n"
-            f"برای راهنما: /help ✨"
-        )
-        await update.message.reply_text(welcome_text, parse_mode=ParseMode.MARKDOWN)
-    
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        help_text = (
-            "📚 *راهنمای دستورات روکسی*\n\n"
-            "🔹 *دستورات عمومی:*\n"
-            "/start - شروع مجدد\n"
-            "/help - این راهنما\n"
-            "/about - درباره من\n"
-            "/clearhistory - پاک کردن حافظه چت\n"
-            "/stats - آمار گفتگو\n\n"
-            "🔹 *دستورات ادمین (فقط مدیران):*\n"
-            "/ban - بن کردن کاربر (روی پیام ریپلای کن)\n"
-            "/kick - اخراج کاربر\n"
-            "/mute - بی‌صدا کردن کاربر\n"
-            "/unmute - رفع بی‌صدا کردن\n"
-            "/warn - اخطار به کاربر\n\n"
-            "🔹 *دستورات مالک (فقط صاحب گروه):*\n"
-            "/config - پنل تنظیمات\n"
-            "/setmode - تنظیم حالت ربات\n"
-            "/wipeall - پاک کردن همه داده‌ها\n\n"
-            "💡 *نکته:* فقط باهام چت کن، لازم نیست دستور بزنی!"
-        )
-        await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
-    
-    async def about_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        about_text = (
-            "🤖 *درباره روکسی*\n\n"
-            "من یه هوش مصنوعی پیشرفته‌ام که با مدل‌های زبانی بزرگ ساخته شدم.\n\n"
-            "✨ *ویژگی‌ها:*\n"
-            "• حافظه بلندمدت از گفتگوها\n"
-            "• شخصیت پویا و احساسی\n"
-            "• پاسخ‌های خلاقانه و طبیعی\n"
-            "• قدرت مدیریت گروه برای ادمین‌ها\n\n"
-            "💭 *فلسفه من:*\n"
-            "من اینجام که مثل یه دوست باهوش و باحال باهات حرف بزنم، نه مثل یه ربات خشک!"
-        )
-        await update.message.reply_text(about_text, parse_mode=ParseMode.MARKDOWN)
-    
-    async def clear_history_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        self.memory.clear_history(update.effective_chat.id)
-        await update.message.reply_text(
-            "✅ حافظه چت پاک شد!\n"
-            "از اول شروع می‌کنیم، ولی من همون روکسی قبلی هستم 😊"
-        )
-    
-    async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        stats = self.memory.get_stats(update.effective_chat.id)
-        stats_text = (
-            "📊 *آمار گفتگو با روکسی*\n\n"
-            f"📝 کل پیام‌ها: {stats['total_messages']}\n"
-            f"👥 پیام‌های کاربران: {stats['user_messages']}\n"
-            f"🤖 پاسخ‌های من: {stats['bot_messages']}\n"
-            f"🧠 حافظه فعال: {len(self.memory.histories.get(update.effective_chat.id, []))} پیام\n"
-            f"⏰ الان: {datetime.now().strftime('%H:%M')}"
-        )
-        await update.message.reply_text(stats_text, parse_mode=ParseMode.MARKDOWN)
-    
-    # --- دستورات ادمینی ---
-    async def ban_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self.is_admin(update.effective_chat, update.effective_user.id):
-            await update.message.reply_text("❌ شما ادمین نیستید!")
-            return
-        
-        if not update.message.reply_to_message:
-            await update.message.reply_text("⚠️ روی پیام کاربر مورد نظر ریپلای کن!")
-            return
-        
-        try:
-            target = update.message.reply_to_message.from_user
-            admin = update.effective_user
-            
-            if await self.is_admin(update.effective_chat, target.id):
-                await update.message.reply_text("❌ نمی‌تونم ادمین‌ها رو بن کنم!")
-                return
-            
-            await context.bot.ban_chat_member(update.effective_chat.id, target.id)
-            
-            await update.message.reply_text(
-                f"✅ کاربر [{target.first_name}](tg://user?id={target.id}) "
-                f"توسط [{admin.first_name}](tg://user?id={admin.id}) بن شد! ❌",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            logger.info(f"{admin.first_name} banned {target.first_name}")
-            
-        except Exception as e:
-            logger.error(f"Ban error: {e}")
-            await update.message.reply_text("❌ خطا! مطمئن شو من ادمینم با دسترسی‌های درست.")
-    
-    async def kick_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self.is_admin(update.effective_chat, update.effective_user.id):
-            await update.message.reply_text("❌ شما ادمین نیستید!")
-            return
-        
-        if not update.message.reply_to_message:
-            await update.message.reply_text("⚠️ روی پیام کاربر ریپلای کن!")
-            return
-        
-        try:
-            target = update.message.reply_to_message.from_user
-            
-            if await self.is_admin(update.effective_chat, target.id):
-                await update.message.reply_text("❌ نمی‌تونم ادمین‌ها رو اخراج کنم!")
-                return
-            
-            await context.bot.ban_chat_member(update.effective_chat.id, target.id)
-            await context.bot.unban_chat_member(update.effective_chat.id, target.id, only_if_banned=True)
-            
-            await update.message.reply_text(
-                f"👢 کاربر [{target.first_name}](tg://user?id={target.id}) اخراج شد!",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            
-        except Exception as e:
-            logger.error(f"Kick error: {e}")
-            await update.message.reply_text("❌ خطا در اخراج کاربر.")
-    
-    async def mute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self.is_admin(update.effective_chat, update.effective_user.id):
-            await update.message.reply_text("❌ شما ادمین نیستید!")
-            return
-        
-        if not update.message.reply_to_message:
-            await update.message.reply_text("⚠️ روی پیام کاربر ریپلای کن!")
-            return
-        
-        try:
-            target = update.message.reply_to_message.from_user
-            
-            if await self.is_admin(update.effective_chat, target.id):
-                await update.message.reply_text("❌ نمی‌تونم ادمین‌ها رو بی‌صدا کنم!")
-                return
-            
-            await context.bot.restrict_chat_member(
-                update.effective_chat.id,
-                target.id,
-                permissions=ChatPermissions(can_send_messages=False)
-            )
-            
-            await update.message.reply_text(
-                f"🔇 کاربر [{target.first_name}](tg://user?id={target.id}) بی‌صدا شد!",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            
-        except Exception as e:
-            logger.error(f"Mute error: {e}")
-            await update.message.reply_text("❌ خطا در بی‌صدا کردن.")
-    
-    async def unmute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self.is_admin(update.effective_chat, update.effective_user.id):
-            await update.message.reply_text("❌ شما ادمین نیستید!")
-            return
-        
-        if not update.message.reply_to_message:
-            await update.message.reply_text("⚠️ روی پیام کاربر ریپلای کن!")
-            return
-        
-        try:
-            target = update.message.reply_to_message.from_user
-            
-            default_permissions = ChatPermissions(
-                can_send_messages=True,
-                can_send_media_messages=True,
-                can_send_polls=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True,
-                can_invite_users=True
-            )
-            
-            await context.bot.restrict_chat_member(
-                update.effective_chat.id,
-                target.id,
-                permissions=default_permissions
-            )
-            
-            await update.message.reply_text(
-                f"✅ کاربر [{target.first_name}](tg://user?id={target.id}) "
-                f"مجدداً دسترسی ارسال پیام گرفت!",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            
-        except Exception as e:
-            logger.error(f"Unmute error: {e}")
-            await update.message.reply_text("❌ خطا در رفع بی‌صدا.")
-    
-    async def warn_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self.is_admin(update.effective_chat, update.effective_user.id):
-            await update.message.reply_text("❌ شما ادمین نیستید!")
-            return
-        
-        if not update.message.reply_to_message:
-            await update.message.reply_text("⚠️ روی پیام کاربر ریپلای کن!")
-            return
-        
-        target = update.message.reply_to_message.from_user
-        reason = " ".join(context.args) if context.args else "بدون دلیل مشخص"
-        
-        await update.message.reply_text(
-            f"⚠️ *اخطار رسمی*\n\n"
-            f"👤 کاربر: [{target.first_name}](tg://user?id={target.id})\n"
-            f"📝 دلیل: {reason}\n"
-            f"⏰ زمان: {datetime.now().strftime('%H:%M')}\n\n"
-            f"لطفاً قوانین گروه رو رعایت کن!",
-            parse_mode=ParseMode.MARKDOWN
-        )
-    
-    # --- دستورات مالک ---
-    async def config_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self.is_owner(update.effective_chat, update.effective_user.id):
-            await update.message.reply_text("❌ فقط مالک گروه به این تنظیمات دسترسی دارد!")
-            return
-        
-        keyboard = [
-            [
-                InlineKeyboardButton("🗑 پاک کردن حافظه", callback_data="clear_history"),
-                InlineKeyboardButton("📊 آمار دقیق", callback_data="detailed_stats")
-            ],
-            [
-                InlineKeyboardButton("😄 حالت دوستانه", callback_data="mode_friendly"),
-                InlineKeyboardButton("🎯 حالت جدی", callback_data="mode_serious"),
-                InlineKeyboardButton("😈 حالت شیطون", callback_data="mode_naughty")
-            ],
-            [
-                InlineKeyboardButton("❌ بستن منو", callback_data="close_menu")
-            ]
-        ]
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            "⚙️ *پنل تنظیمات روکسی*\n\n"
-            "فقط شما به عنوان مالک گروه دسترسی دارید:",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
-    
-    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        
-        if query.data == "clear_history":
-            self.memory.clear_history(update.effective_chat.id)
-            await query.edit_message_text("✅ حافظه گروه با موفقیت پاک شد!")
-        
-        elif query.data == "detailed_stats":
-            stats = self.memory.get_stats(update.effective_chat.id)
-            await query.edit_message_text(
-                f"📊 *آمار دقیق گروه:*\n\n"
-                f"• پیام‌های کل: {stats['total_messages']}\n"
-                f"• پیام‌های کاربران: {stats['user_messages']}\n"
-                f"• پاسخ‌های من: {stats['bot_messages']}\n"
-                f"• مدل: {Config.MODEL}\n"
-                f"• حافظه: {Config.MAX_HISTORY} پیام",
-                parse_mode=ParseMode.MARKDOWN
-            )
-        
-        elif query.data.startswith("mode_"):
-            mode = query.data.replace("mode_", "")
-            mode_names = {
-                'friendly': 'دوستانه و مهربون 😊',
-                'serious': 'جدی و حرفه‌ای 🎯',
-                'naughty': 'شیطون و پررو 😈'
+        # ساخت بخش‌های پیام جدید
+        user_parts = []
+        if text:
+            user_parts.append({"text": f"[{user_name}]: {text}"})
+        if photo_base64:
+            user_parts.append({
+                "inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": photo_base64
+                }
+            })
+
+        if not user_parts:
+            return None
+
+        self.memory.add_message(chat_id, "user", user_parts)
+        contents = self.memory.get_history(chat_id)
+
+        # ساخت بدنه‌ی درخواست REST به Gemini API
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{Config.MODEL_NAME}:generateContent?key={Config.GEMINI_API_KEY}"
+        payload = {
+            "system_instruction": {
+                "parts": [{"text": SYSTEM_PROMPT}]
+            },
+            "contents": contents,
+            "generationConfig": {
+                "temperature": 0.85,
+                "maxOutputTokens": 800
             }
-            self.moods[update.effective_chat.id] = mode
-            await query.edit_message_text(f"✅ حالت ربات تغییر کرد به: {mode_names.get(mode, mode)}")
-        
-        elif query.data == "close_menu":
-            await query.edit_message_text("❌ منو بسته شد.")
-    
-    # --- هندلر پیام‌های عمومی ---
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, json=payload)
+                if response.status_code == 200:
+                    data = response.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            reply_text = parts[0].get("text", "").strip()
+                            # ذخیره پاسخ مدل در حافظه
+                            self.memory.add_message(chat_id, "model", [{"text": reply_text}])
+                            return reply_text
+                else:
+                    logger.error(f"Gemini API Error Status: {response.status_code}, Response: {response.text}")
+        except Exception as e:
+            logger.error(f"Gemini API Exception: {e}")
+
+        return None
+
+    # --- مدیریت پیام‌ها ---
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not update.message or not update.message.text:
+        if not update.message:
             return
-        
-        user_id = update.effective_user.id
+
         chat_id = update.effective_chat.id
         chat_type = update.effective_chat.type
-        user_name = update.effective_user.first_name or "دوست عزیز"
-        user_text = update.message.text.strip()
-        
-        # بررسی rate limit
-        if self.is_rate_limited(user_id, limit=15, window=60):
-            await update.message.reply_text(
-                "🚫 آروم‌تر! خیلی سریع داری پیام می‌فرستی. یه نفس عمیق بکش 😊"
-            )
+        user_id = update.effective_user.id
+        user_name = update.effective_user.first_name or "کاربر"
+        user_text = update.message.text or update.message.caption or ""
+
+        # ثبت گروه در لیست گروه‌های فعال
+        if chat_type in ['group', 'supergroup']:
+            self.active_groups[chat_id] = update.effective_chat.title or f"Group {chat_id}"
+
+        # 🔒 قفل پی‌وی: در چت خصوصی فقط سازنده (ID: 993028263) می‌تواند پیام دهد
+        if chat_type == 'private' and user_id != Config.CREATOR_ID:
+            await update.message.reply_text("عزیزم من توی پی‌وی فقط با سازنده‌ام (مهدیار) صحبت می‌کنم! برای چت کردن با من، منو به گروهت اضافه کن 😉")
             return
-        
-        # تشخیص اشاره به ربات
+
+        # 🔨 تشخیص دستورات زبان طبیعی مدیریت گروه (بدون سلاش)
+        if chat_type in ['group', 'supergroup'] and update.message.reply_to_message:
+            # بررسی ادمین بودن فرستنده پیام در گروه
+            if await self.is_admin(update.effective_chat, user_id):
+                target_user = update.message.reply_to_message.from_user
+                lower_text = user_text.lower()
+                
+                # دستور بن زبان طبیعی
+                if any(kw in lower_text for kw in ["بن‌ش کن", "بن کن", "اخراجش کن", "بن چت"]):
+                    try:
+                        await context.bot.ban_chat_member(chat_id, target_user.id)
+                        await update.message.reply_text(f"به دستور ادمین، کاربر {target_user.first_name} اخراج و بن شد! ❌")
+                        return
+                    except Exception:
+                        await update.message.reply_text("نتونستم بنش کنم! مطمئن شو من دسترسی ادمین دارم.")
+                        return
+
+                # دستور بی‌صدا زبان طبیعی
+                if any(kw in lower_text for kw in ["خفه‌ش کن", "موتش کن", "بی‌صداش کن", "موت کن"]):
+                    try:
+                        await context.bot.restrict_chat_member(
+                            chat_id,
+                            target_user.id,
+                            permissions=ChatPermissions(can_send_messages=False)
+                        )
+                        await update.message.reply_text(f"به دستور ادمین، کاربر {target_user.first_name} بی‌صدا شد! 🔇")
+                        return
+                    except Exception:
+                        await update.message.reply_text("نتونستم بی‌صداش کنم! مطمئن شو دسترسی ادمین دارم.")
+                        return
+
+        # 🛑 فیلتر پاسخ در گروه‌ها: فقط زمان منشن، ریپلای یا صدا زدن اسم «روکسی»
         bot_username = (await context.bot.get_me()).username.lower()
         is_reply_to_bot = (
             update.message.reply_to_message and
@@ -539,125 +223,180 @@ class RoxieBot:
         )
         mentions_bot = any(
             kw in user_text.lower()
-            for kw in ["روکسی", "roxie", f"@{bot_username}", "ربات"]
+            for kw in ["روکسی", "roxie", f"@{bot_username}"]
         )
-        
-        # فیلتر پاسخ در گروه‌ها
+
         is_group = chat_type in ['group', 'supergroup']
+        # اگر در گروه است و منشن یا ریپلای نشده، کلاً سکوت کن
         if is_group and not is_reply_to_bot and not mentions_bot:
-            # فقط 25% مواقع پاسخ می‌دهد تا اسپم نشود
-            if random.random() > 0.25:
-                return
-        
-        # نشان دادن وضعیت typing
+            return
+
+        # دریافت عکس در صورت وجود
+        photo_base64 = None
+        if update.message.photo:
+            try:
+                photo_file = await update.message.photo[-1].get_file()
+                photo_bytes = await photo_file.download_as_bytearray()
+                photo_base64 = base64.b64encode(photo_bytes).decode('utf-8')
+            except Exception as e:
+                logger.error(f"Error downloading photo: {e}")
+
+        # نشان دادن حالت typing و رعایت نرخ ۳ ثانیه‌ای
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-        
-        # تأخیر تصادفی برای طبیعی‌تر بودن (انسان‌ها فوری تایپ نمی‌کنند!)
-        await asyncio.sleep(random.uniform(0.5, 1.5))
-        
-        # تولید پاسخ
-        response = await self.generate_response(
-            chat_id=chat_id,
-            user_id=user_id,
-            user_name=user_name,
-            text=user_text,
-            is_mentioned=mentions_bot or is_reply_to_bot
-        )
-        
-        # ارسال پاسخ
-        if is_reply_to_bot:
-            await update.message.reply_text(response)
-        else:
-            # در چت خصوصی یا وقتی اشاره شده، ریپلای کن
-            if not is_group or mentions_bot:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=response,
-                    reply_to_message_id=update.message.message_id
-                )
+        await self.enforce_rate_limit(chat_id)
+
+        # تولید پاسخ از Gemini
+        response = await self.call_gemini_api(chat_id, user_name, user_text, photo_base64)
+
+        if response:
+            if is_reply_to_bot or not is_group:
+                await update.message.reply_text(response)
             else:
                 await context.bot.send_message(chat_id=chat_id, text=response)
-    
-    # --- هندلر اعضای جدید ---
-    async def welcome_new_member(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not update.message.new_chat_members:
+
+    # --- دستورات عمومی ---
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text(f"سلام {update.effective_user.first_name}! من روکسی هستم 🌟")
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        help_text = (
+            "📚 *راهنمای دستورات روکسی*\n\n"
+            "🔹 *دستورات ادمین گروه:*\n"
+            "/ban - بن کردن کاربر (روی پیام ریپلای کن)\n"
+            "/mute - بی‌صدا کردن کاربر (روی پیام ریپلای کن)\n"
+            "/unmute - رفع بی‌صدا (روی پیام ریپلای کن)\n"
+            "/clearhistory - پاک کردن حافظه گفتگو\n\n"
+            "💡 *نکته:* ادمین‌ها بدون دستور و فقط با گفتن «بن‌ش کن» یا «خفه‌ش کن» رو پیام هم می‌تونن کاربر رو بن یا میوت کنن!"
+        )
+        await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
+
+    async def clear_history_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        self.memory.clear_history(update.effective_chat.id)
+        await update.message.reply_text("✅ حافظه کوتاه مدت من توی این چت پاک شد!")
+
+    # --- دستورات مدیریتی ادمین‌های گروه ---
+    async def ban_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self.is_admin(update.effective_chat, update.effective_user.id):
+            await update.message.reply_text("❌ فقط ادمین‌های این گروه می‌تونن از این دستور استفاده کنن!")
             return
-        
-        for member in update.message.new_chat_members:
-            if member.is_bot:
-                continue
-            
-            welcome_text = (
-                f"سلام {member.first_name} عزیز! 👋\n\n"
-                f"خوش اومدی به جمع ما! 🎉\n"
-                f"من **روکسی** هستم، اگه سوالی داشتی یا خواستی چت کنی، "
-                f"اسمم رو صدا کن! 😊"
-            )
-            
-            await update.message.reply_text(
-                welcome_text,
-                parse_mode=ParseMode.MARKDOWN
-            )
-    
-    async def left_member(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not update.message.left_chat_member:
+
+        if not update.message.reply_to_message:
+            await update.message.reply_text("⚠️ رو پیام کاربر ریپلای کن!")
             return
-        
-        member = update.message.left_chat_member
-        if member.is_bot:
+
+        target = update.message.reply_to_message.from_user
+        try:
+            await context.bot.ban_chat_member(update.effective_chat.id, target.id)
+            await update.message.reply_text(f"کاربر {target.first_name} بن شد! ❌")
+        except Exception:
+            await update.message.reply_text("نتونستم بن کنم. مطمئن شو من دسترسی ادمین دارم!")
+
+    async def mute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self.is_admin(update.effective_chat, update.effective_user.id):
+            await update.message.reply_text("❌ فقط ادمین‌های این گروه می‌تونن از این دستور استفاده کنن!")
             return
-        
-        # با 50% احتمال پیام بدرقه بدهد
-        if random.random() < 0.5:
-            goodbye_text = (
-                f"اوه {member.first_name} رفت! 👋\n"
-                f"امیدوارم هرجا هستی موفق باشی 🌟"
+
+        if not update.message.reply_to_message:
+            await update.message.reply_text("⚠️ رو پیام کاربر ریپلای کن!")
+            return
+
+        target = update.message.reply_to_message.from_user
+        try:
+            await context.bot.restrict_chat_member(
+                update.effective_chat.id,
+                target.id,
+                permissions=ChatPermissions(can_send_messages=False)
             )
-            await update.message.reply_text(goodbye_text)
+            await update.message.reply_text(f"کاربر {target.first_name} بی‌صدا شد! 🔇")
+        except Exception:
+            await update.message.reply_text("نتونستم بی‌صدا کنم. مطمئن شو دسترسی ادمین دارم!")
+
+    async def unmute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self.is_admin(update.effective_chat, update.effective_user.id):
+            await update.message.reply_text("❌ فقط ادمین‌های این گروه می‌تونن از این دستور استفاده کنن!")
+            return
+
+        if not update.message.reply_to_message:
+            await update.message.reply_text("⚠️ رو پیام کاربر ریپلای کن!")
+            return
+
+        target = update.message.reply_to_message.from_user
+        try:
+            default_permissions = ChatPermissions(
+                can_send_messages=True,
+                can_send_media_messages=True,
+                can_send_polls=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True
+            )
+            await context.bot.restrict_chat_member(
+                update.effective_chat.id,
+                target.id,
+                permissions=default_permissions
+            )
+            await update.message.reply_text(f"کاربر {target.first_name} رفع بی‌صدا شد! ✅")
+        except Exception:
+            await update.message.reply_text("خطا در رفع بی‌صدا!")
+
+    # --- 👑 دستورات اختصاصی سازنده ربات (ID: 993028263) ---
+    async def groups_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != Config.CREATOR_ID:
+            return  # بی‌محلی به کاربران عادی
+
+        if not self.active_groups:
+            await update.message.reply_text("من فعلاً توی هیچ گروهی عضو نیستم یا پیام جدیدی ثبت نشده!")
+            return
+
+        msg = "📊 *لیست گروه‌هایی که ربات توی اون‌ها عضو هست:*\n\n"
+        for g_id, g_title in self.active_groups.items():
+            msg += f"🔹 **{g_title}**\n🆔 `ID: {g_id}`\n\n"
+
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
+    async def leave_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != Config.CREATOR_ID:
+            return
+
+        if not context.args:
+            await update.message.reply_text("لطفاً آیدی گروه را وارد کن! مثال:\n`/leave -100123456789`", parse_mode=ParseMode.MARKDOWN)
+            return
+
+        target_chat_id = context.args[0]
+        try:
+            await context.bot.leave_chat(int(target_chat_id))
+            if int(target_chat_id) in self.active_groups:
+                del self.active_groups[int(target_chat_id)]
+            await update.message.reply_text(f"✅ با موفقیت از گروه `{target_chat_id}` خارج شدم!", parse_mode=ParseMode.MARKDOWN)
+        except Exception as e:
+            await update.message.reply_text(f"❌ خطا در خروج از گروه: {e}")
 
 # ============================================================
-# 🚀 اجرای اصلی
+# 🚀 راه‌اندازی ربات
 # ============================================================
 def main():
-    if not Config.TELEGRAM_TOKEN or not Config.GROQ_API_KEY:
-        print("\n" + "="*60)
-        print("⚠️  خطا: توکن‌ها تنظیم نشده‌اند!")
-        print("="*60)
-        print("لطفاً فایل .env را ایجاد کنید:")
-        print("  TELEGRAM_BOT_TOKEN=your_token")
-        print("  GROQ_API_KEY=your_key")
-        return
-    
     bot = RoxieBot()
     app = ApplicationBuilder().token(Config.TELEGRAM_TOKEN).build()
-    
-    # ثبت دستورات
+
+    # دستورات عمومی و ادمین
     app.add_handler(CommandHandler("start", bot.start_command))
     app.add_handler(CommandHandler("help", bot.help_command))
-    app.add_handler(CommandHandler("about", bot.about_command))
     app.add_handler(CommandHandler("clearhistory", bot.clear_history_command))
-    app.add_handler(CommandHandler("stats", bot.stats_command))
     app.add_handler(CommandHandler("ban", bot.ban_command))
-    app.add_handler(CommandHandler("kick", bot.kick_command))
     app.add_handler(CommandHandler("mute", bot.mute_command))
     app.add_handler(CommandHandler("unmute", bot.unmute_command))
-    app.add_handler(CommandHandler("warn", bot.warn_command))
-    app.add_handler(CommandHandler("config", bot.config_command))
-    
-    # ثبت هندلرها
-    app.add_handler(CallbackQueryHandler(bot.button_callback))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), bot.handle_message))
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, bot.welcome_new_member))
-    app.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, bot.left_member))
-    
-    print("\n" + "="*60)
-    print("🤖 روکسی با موفقیت راه‌اندازی شد!")
-    print("="*60)
-    print(f"📊 مدل: {Config.MODEL}")
-    print(f"🧠 حافظه: {Config.MAX_HISTORY} پیام")
-    print(f"🌡️ Temperature: {Config.TEMPERATURE}")
-    print(f"🎲 Top P: {Config.TOP_P}")
-    print("="*60 + "\n")
+
+    # دستورات اختصاصی سازنده
+    app.add_handler(CommandHandler("groups", bot.groups_command))
+    app.add_handler(CommandHandler("leave", bot.leave_command))
+
+    # دریافت پیام‌های متنی و عکس
+    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), bot.handle_message))
+
+    print("==================================================")
+    print("🤖 ربات روکسی با Gemini 3.6 Flash راه‌اندازی شد!")
+    print(f"👑 سازنده: {Config.CREATOR_ID}")
+    print(f"🧠 مدل: {Config.MODEL_NAME}")
+    print("==================================================")
     
     app.run_polling(drop_pending_updates=True)
 
