@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
 
-import httpx
+import google.generativeai as genai
 from dotenv import load_dotenv
 from telegram import (
     Update, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
@@ -35,6 +35,9 @@ class Config:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RoxieBot")
 
+# تنظیم کلید API در پکیج رسمی گوگل جهت پشتیبانی از کلیدهای جدید AQ
+genai.configure(api_key=Config.GEMINI_API_KEY.strip())
+
 # ============================================================
 # 🧠 شخصیت دخترانه، پررو و باهوش روکسی
 # ============================================================
@@ -59,16 +62,16 @@ class ChatMemory:
         self.histories: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
         self.max_history = max_history
 
-    def add_message(self, chat_id: int, role: str, parts: List[Dict[str, Any]]):
+    def add_message(self, chat_id: int, role: str, text: str):
         if chat_id not in self.histories:
             self.histories[chat_id] = []
         
+        sdk_role = "user" if role == "user" else "model"
         self.histories[chat_id].append({
-            "role": role,
-            "parts": parts
+            "role": sdk_role,
+            "parts": [text]
         })
         
-        # حفظ فقط ۵ پیام اخیر
         if len(self.histories[chat_id]) > self.max_history:
             self.histories[chat_id] = self.histories[chat_id][-self.max_history:]
 
@@ -95,7 +98,6 @@ class RoxieBot:
             return False
 
     async def enforce_rate_limit(self, chat_id: int):
-        """اعمال فاصله حداقل ۳ ثانیه‌ای بین پاسخ‌ها"""
         now = time.time()
         elapsed = now - self.last_sent_time[chat_id]
         if elapsed < Config.MIN_DELAY_SECONDS:
@@ -103,64 +105,42 @@ class RoxieBot:
         self.last_sent_time[chat_id] = time.time()
 
     async def call_gemini_api(self, chat_id: int, user_name: str, text: str, photo_base64: Optional[str] = None) -> Optional[str]:
-        """ارسال درخواست مستقیم به API گوگل ای‌ای استودیو (Gemini)"""
+        """ارسال درخواست به گوگل با استفاده از کتابخانه رسمی google.generativeai"""
         
-        user_parts = []
-        if text:
-            user_parts.append({"text": f"[{user_name}]: {text}"})
-        if photo_base64:
-            user_parts.append({
-                "inline_data": {
-                    "mime_type": "image/jpeg",
-                    "data": photo_base64
-                }
-            })
-
-        if not user_parts:
-            return None
-
-        self.memory.add_message(chat_id, "user", user_parts)
-        contents = self.memory.get_history(chat_id)
-
-        # لیست مدل‌های گوگل ای‌ای استودیو جهت تست به ترتیب
+        user_input = f"[{user_name}]: {text}" if text else f"[{user_name}] عکسی فرستاد."
+        self.memory.add_message(chat_id, "user", user_input)
+        
+        history = self.memory.get_history(chat_id)
         models_to_try = [Config.MODEL_NAME, "gemini-1.5-flash", "gemini-2.0-flash-exp"]
 
-        payload = {
-            "system_instruction": {
-                "parts": [{"text": SYSTEM_PROMPT}]
-            },
-            "contents": contents,
-            "generationConfig": {
-                "temperature": 0.85,
-                "maxOutputTokens": 800
-            }
-        }
+        loop = asyncio.get_running_loop()
 
-        api_key = Config.GEMINI_API_KEY.strip()
+        for model_name in models_to_try:
+            try:
+                model = genai.GenerativeModel(
+                    model_name=model_name,
+                    system_instruction=SYSTEM_PROMPT
+                )
+                
+                # اجرای درخواست در یک Thread مجزا تا ربات هنگ نکند
+                response = await loop.run_in_executor(
+                    None,
+                    lambda m=model: m.generate_content(
+                        contents=history,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.85,
+                            max_output_tokens=800
+                        )
+                    )
+                )
+                
+                if response and response.text:
+                    reply_text = response.text.strip()
+                    self.memory.add_message(chat_id, "model", reply_text)
+                    return reply_text
 
-        headers = {
-            "Content-Type": "application/json"
-        }
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            for model_name in models_to_try:
-                # اصلاح مشکل ۴۰۱: اضافه کردن کلید API به صورت ?key= به آخر آدرس
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-                try:
-                    response = await client.post(url, json=payload, headers=headers)
-                    if response.status_code == 200:
-                        data = response.json()
-                        candidates = data.get("candidates", [])
-                        if candidates:
-                            parts = candidates[0].get("content", {}).get("parts", [])
-                            if parts:
-                                reply_text = parts[0].get("text", "").strip()
-                                self.memory.add_message(chat_id, "model", [{"text": reply_text}])
-                                return reply_text
-                    else:
-                        logger.error(f"Google AI Studio Error ({model_name}): Status {response.status_code}, Response: {response.text}")
-                except Exception as e:
-                    logger.error(f"Google AI Studio Exception ({model_name}): {e}")
+            except Exception as e:
+                logger.error(f"Google AI Studio Error ({model_name}): {e}")
 
         return None
 
