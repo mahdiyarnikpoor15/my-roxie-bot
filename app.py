@@ -1,13 +1,12 @@
 import os
 import logging
 import asyncio
-import base64
 import time
-from datetime import datetime
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 from telegram import (
     Update, ChatPermissions
@@ -35,8 +34,8 @@ class Config:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RoxieBot")
 
-# پیکربندی کلید API جدید متصل به Service Account در پکیج رسمی گوگل
-genai.configure(api_key=Config.GEMINI_API_KEY.strip())
+# ساخت کلاینت جدید گوگل با پکیج جدید google-genai و کلید AQ
+ai_client = genai.Client(api_key=Config.GEMINI_API_KEY.strip())
 
 # ============================================================
 # 🧠 شخصیت دخترانه، پررو و باهوش روکسی
@@ -49,7 +48,6 @@ SYSTEM_PROMPT = """
 - تو یک دختر مستقل و باهوشی! اصلاً مثل ربات‌های خشک صحبت نکن.
 - لحن تو فارسی محاوره‌ای، روان، کمی پررو و تیکه‌انداز است اما بی‌دلیل و الکی فحاشی نمی‌کنی.
 - طول پاسخ: پاسخ‌هایت نه خیلی کوتاه و تک‌کلمه‌ای باشد و نه خیلی طولانی و خسته‌کننده. دقیقاً به اندازه‌ای که حق مطلب ادا شود و خودت صلاح بدانی صحبت کن.
-- تو توانایی دیدن عکس‌ها و گیف‌ها را داری. اگر تصاویری فرستاده شد، درباره آن‌ها نظر بده.
 - احساسات داری! اگر کسی با تو صمیمی شد صمیمی باش، اگر کسی تیکه انداخت جواب دندان‌شکن بده.
 - هرگز جملاتی مثل "من یک مدل زبانی هستم" یا "من هوش مصنوعی هستم" نگو! تو روکسی هستی.
 """
@@ -69,7 +67,7 @@ class ChatMemory:
         sdk_role = "user" if role == "user" else "model"
         self.histories[chat_id].append({
             "role": sdk_role,
-            "parts": [text]
+            "parts": [{"text": text}]
         })
         
         if len(self.histories[chat_id]) > self.max_history:
@@ -104,9 +102,8 @@ class RoxieBot:
             await asyncio.sleep(Config.MIN_DELAY_SECONDS - elapsed)
         self.last_sent_time[chat_id] = time.time()
 
-    async def call_gemini_api(self, chat_id: int, user_name: str, text: str, photo_base64: Optional[str] = None) -> Optional[str]:
-        """ارسال درخواست به گوگل با استفاده از کتابخانه رسمی google.generativeai"""
-        
+    async def call_gemini_api(self, chat_id: int, user_name: str, text: str) -> Optional[str]:
+        """ارسال درخواست به گوگل با کتابخانه جدید google-genai مخصوص کلیدهای AQ"""
         user_input = f"[{user_name}]: {text}" if text else f"[{user_name}] عکسی فرستاد."
         self.memory.add_message(chat_id, "user", user_input)
         
@@ -115,21 +112,20 @@ class RoxieBot:
 
         loop = asyncio.get_running_loop()
 
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            temperature=0.85,
+            max_output_tokens=800,
+        )
+
         for model_name in models_to_try:
             try:
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    system_instruction=SYSTEM_PROMPT
-                )
-                
                 response = await loop.run_in_executor(
                     None,
-                    lambda m=model: m.generate_content(
+                    lambda m=model_name: ai_client.models.generate_content(
+                        model=m,
                         contents=history,
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=0.85,
-                            max_output_tokens=800
-                        )
+                        config=config
                     )
                 )
                 
@@ -154,7 +150,6 @@ class RoxieBot:
         user_name = update.effective_user.first_name or "کاربر"
         user_text = update.message.text or update.message.caption or ""
 
-        # ثبت گروه در لیست گروه‌های فعال
         if chat_type in ['group', 'supergroup']:
             self.active_groups[chat_id] = update.effective_chat.title or f"Group {chat_id}"
 
@@ -169,7 +164,6 @@ class RoxieBot:
                 target_user = update.message.reply_to_message.from_user
                 lower_text = user_text.lower()
                 
-                # دستور بن زبان طبیعی
                 if any(kw in lower_text for kw in ["بن‌ش کن", "بن کن", "اخراجش کن", "بن چت"]):
                     try:
                         await context.bot.ban_chat_member(chat_id, target_user.id)
@@ -179,7 +173,6 @@ class RoxieBot:
                         await update.message.reply_text("نتونستم بنش کنم! مطمئن شو من دسترسی ادمین دارم.")
                         return
 
-                # دستور بی‌صدا زبان طبیعی
                 if any(kw in lower_text for kw in ["خفه‌ش کن", "موتش کن", "بی‌صداش کن", "موت کن"]):
                     try:
                         await context.bot.restrict_chat_member(
@@ -344,7 +337,6 @@ def main():
     bot = RoxieBot()
     app = ApplicationBuilder().token(Config.TELEGRAM_TOKEN).build()
 
-    # دستورات عمومی و ادمین
     app.add_handler(CommandHandler("start", bot.start_command))
     app.add_handler(CommandHandler("help", bot.help_command))
     app.add_handler(CommandHandler("clearhistory", bot.clear_history_command))
@@ -352,15 +344,13 @@ def main():
     app.add_handler(CommandHandler("mute", bot.mute_command))
     app.add_handler(CommandHandler("unmute", bot.unmute_command))
 
-    # دستورات اختصاصی سازنده
     app.add_handler(CommandHandler("groups", bot.groups_command))
     app.add_handler(CommandHandler("leave", bot.leave_command))
 
-    # دریافت پیام‌های متنی و عکس
     app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), bot.handle_message))
 
     print("==================================================")
-    print("🤖 ربات روکسی مستقیماً با Google AI Studio راه‌اندازی شد!")
+    print("🤖 ربات روکسی راه‌اندازی شد!")
     print(f"👑 سازنده: {Config.CREATOR_ID}")
     print("==================================================")
     
