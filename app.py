@@ -2,7 +2,6 @@ import os
 import logging
 import asyncio
 import base64
-import io
 import time
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -27,7 +26,7 @@ load_dotenv()
 # ============================================================
 class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM")
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6L2-D3iqiKBV9DGC2PTNZuQM6R4tmnI4aGZ5hVlkV-Yvg")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6IwZnKNvnrE4poVWJfSofMgZyh3V2F1m69UK1xwxoTpxQ")
     CREATOR_ID = int(os.getenv("CREATOR_ID", "993028263"))
     MODEL_NAME = os.getenv("MODEL_NAME", "gemini-3.6-flash")
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
@@ -45,7 +44,7 @@ SYSTEM_PROMPT = """
 
 ## ویژگی‌های شخصیتی:
 - تو یک دختر مستقل و باهوشی! اصلاً مثل ربات‌های خشک صحبت نکن.
-- لحن تو فارسی محاوره‌ای، روان، کمی پررو و رپ‌گونه است اما بی‌دلیل و الکی فحاشی نمی‌کنی.
+- لحن تو فارسی محاوره‌ای، روان، کمی پررو و تیکه‌انداز است اما بی‌دلیل و الکی فحاشی نمی‌کنی.
 - طول پاسخ: پاسخ‌هایت نه خیلی کوتاه و تک‌کلمه‌ای باشد و نه خیلی طولانی و خسته‌کننده. دقیقاً به اندازه‌ای که حق مطلب ادا شود و خودت صلاح بدانی صحبت کن.
 - تو توانایی دیدن عکس‌ها و گیف‌ها را داری. اگر تصاویری فرستاده شد، درباره آن‌ها نظر بده.
 - احساسات داری! اگر کسی با تو صمیمی شد صمیمی باش، اگر کسی تیکه انداخت جواب دندان‌شکن بده.
@@ -86,19 +85,12 @@ class RoxieBot:
     def __init__(self):
         self.memory = ChatMemory(max_history=Config.MAX_HISTORY)
         self.last_sent_time: Dict[int, float] = defaultdict(float)
-        self.active_groups: Dict[int, str] = {}  # ذخیره لیست گروه‌ها
+        self.active_groups: Dict[int, str] = {}
 
     async def is_admin(self, chat, user_id: int) -> bool:
         try:
             member = await chat.get_member(user_id)
             return member.status in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR]
-        except Exception:
-            return False
-
-    async def is_owner(self, chat, user_id: int) -> bool:
-        try:
-            member = await chat.get_member(user_id)
-            return member.status == ChatMemberStatus.OWNER
         except Exception:
             return False
 
@@ -111,9 +103,8 @@ class RoxieBot:
         self.last_sent_time[chat_id] = time.time()
 
     async def call_gemini_api(self, chat_id: int, user_name: str, text: str, photo_base64: Optional[str] = None) -> Optional[str]:
-        """ارسال درخواست به API Gemini 3.6 Flash"""
+        """ارسال درخواست به API Gemini 3.6 Flash با هدرهای استاندارد احراز هویت"""
         
-        # ساخت بخش‌های پیام جدید
         user_parts = []
         if text:
             user_parts.append({"text": f"[{user_name}]: {text}"})
@@ -131,8 +122,15 @@ class RoxieBot:
         self.memory.add_message(chat_id, "user", user_parts)
         contents = self.memory.get_history(chat_id)
 
-        # ساخت بدنه‌ی درخواست REST به Gemini API
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{Config.MODEL_NAME}:generateContent?key={Config.GEMINI_API_KEY}"
+        
+        # هدرهای پشتیبانی از کلیدهای جدید AQ گوگل
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": Config.GEMINI_API_KEY,
+            "Authorization": f"Bearer {Config.GEMINI_API_KEY}"
+        }
+
         payload = {
             "system_instruction": {
                 "parts": [{"text": SYSTEM_PROMPT}]
@@ -146,7 +144,7 @@ class RoxieBot:
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(url, json=payload)
+                response = await client.post(url, json=payload, headers=headers)
                 if response.status_code == 200:
                     data = response.json()
                     candidates = data.get("candidates", [])
@@ -154,7 +152,6 @@ class RoxieBot:
                         parts = candidates[0].get("content", {}).get("parts", [])
                         if parts:
                             reply_text = parts[0].get("text", "").strip()
-                            # ذخیره پاسخ مدل در حافظه
                             self.memory.add_message(chat_id, "model", [{"text": reply_text}])
                             return reply_text
                 else:
@@ -186,7 +183,6 @@ class RoxieBot:
 
         # 🔨 تشخیص دستورات زبان طبیعی مدیریت گروه (بدون سلاش)
         if chat_type in ['group', 'supergroup'] and update.message.reply_to_message:
-            # بررسی ادمین بودن فرستنده پیام در گروه
             if await self.is_admin(update.effective_chat, user_id):
                 target_user = update.message.reply_to_message.from_user
                 lower_text = user_text.lower()
@@ -227,7 +223,6 @@ class RoxieBot:
         )
 
         is_group = chat_type in ['group', 'supergroup']
-        # اگر در گروه است و منشن یا ریپلای نشده، کلاً سکوت کن
         if is_group and not is_reply_to_bot and not mentions_bot:
             return
 
@@ -341,7 +336,7 @@ class RoxieBot:
     # --- 👑 دستورات اختصاصی سازنده ربات (ID: 993028263) ---
     async def groups_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id != Config.CREATOR_ID:
-            return  # بی‌محلی به کاربران عادی
+            return
 
         if not self.active_groups:
             await update.message.reply_text("من فعلاً توی هیچ گروهی عضو نیستم یا پیام جدیدی ثبت نشده!")
