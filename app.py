@@ -1,13 +1,14 @@
 import os
 import logging
 import asyncio
-import base64
+import io
 import time
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
 
-import httpx
+import google.generativeai as genai
+from PIL import Image
 from dotenv import load_dotenv
 from telegram import (
     Update, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
@@ -35,6 +36,9 @@ class Config:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RoxieBot")
 
+# تنظیم کلاینت رسمی گوگل
+genai.configure(api_key=Config.GEMINI_API_KEY)
+
 # ============================================================
 # 🧠 شخصیت دخترانه، پررو و باهوش روکسی
 # ============================================================
@@ -59,7 +63,7 @@ class ChatMemory:
         self.histories: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
         self.max_history = max_history
 
-    def add_message(self, chat_id: int, role: str, parts: List[Dict[str, Any]]):
+    def add_message(self, chat_id: int, role: str, parts: List[Any]):
         if chat_id not in self.histories:
             self.histories[chat_id] = []
         
@@ -86,6 +90,12 @@ class RoxieBot:
         self.memory = ChatMemory(max_history=Config.MAX_HISTORY)
         self.last_sent_time: Dict[int, float] = defaultdict(float)
         self.active_groups: Dict[int, str] = {}
+        
+        # مدل رسمی گوگل
+        self.gemini_model = genai.GenerativeModel(
+            model_name=Config.MODEL_NAME,
+            system_instruction=SYSTEM_PROMPT
+        )
 
     async def is_admin(self, chat, user_id: int) -> bool:
         try:
@@ -102,71 +112,36 @@ class RoxieBot:
             await asyncio.sleep(Config.MIN_DELAY_SECONDS - elapsed)
         self.last_sent_time[chat_id] = time.time()
 
-    async def call_gemini_api(self, chat_id: int, user_name: str, text: str, photo_base64: Optional[str] = None) -> Optional[str]:
-        """ارسال درخواست به API Gemini با تشخیص هوشمند فرمت توکن"""
-        
-        user_parts = []
+    async def call_gemini_api(self, chat_id: int, user_name: str, text: str, photo_bytes: Optional[bytes] = None) -> Optional[str]:
+        """ارسال درخواست به API رسمی گوگل با کتابخانه google-generativeai"""
+        parts = []
         if text:
-            user_parts.append({"text": f"[{user_name}]: {text}"})
-        if photo_base64:
-            user_parts.append({
-                "inline_data": {
-                    "mime_type": "image/jpeg",
-                    "data": photo_base64
-                }
-            })
+            parts.append(f"[{user_name}]: {text}")
+        if photo_bytes:
+            try:
+                img = Image.open(io.BytesIO(photo_bytes))
+                parts.append(img)
+            except Exception as e:
+                logger.error(f"Error opening image: {e}")
 
-        if not user_parts:
+        if not parts:
             return None
 
-        self.memory.add_message(chat_id, "user", user_parts)
+        self.memory.add_message(chat_id, "user", parts)
         contents = self.memory.get_history(chat_id)
 
-        models_to_try = [Config.MODEL_NAME, "gemini-1.5-flash", "gemini-2.0-flash-exp"]
-
-        payload = {
-            "system_instruction": {
-                "parts": [{"text": SYSTEM_PROMPT}]
-            },
-            "contents": contents,
-            "generationConfig": {
-                "temperature": 0.85,
-                "maxOutputTokens": 800
-            }
-        }
-
-        api_key = Config.GEMINI_API_KEY.strip()
-
-        # تشخیص هوشمند نحوه ارسال توکن بر اساس نوع آن
-        if api_key.startswith("AIzaSy"):
-            headers = {"Content-Type": "application/json"}
-            url_suffix = f"?key={api_key}"
-        else:
-            # برای توکن‌های AQ نباید کلمه ?key= در URL باشد!
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}"
-            }
-            url_suffix = ""
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            for model_name in models_to_try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent{url_suffix}"
-                try:
-                    response = await client.post(url, json=payload, headers=headers)
-                    if response.status_code == 200:
-                        data = response.json()
-                        candidates = data.get("candidates", [])
-                        if candidates:
-                            parts = candidates[0].get("content", {}).get("parts", [])
-                            if parts:
-                                reply_text = parts[0].get("text", "").strip()
-                                self.memory.add_message(chat_id, "model", [{"text": reply_text}])
-                                return reply_text
-                    else:
-                        logger.error(f"Gemini API Error ({model_name}): Status {response.status_code}, Response: {response.text}")
-                except Exception as e:
-                    logger.error(f"Gemini API Exception ({model_name}): {e}")
+        try:
+            # فراخوانی کتابخانه گوگل غیرهمگام در نخ جداگانه
+            response = await asyncio.to_thread(
+                self.gemini_model.generate_content,
+                contents
+            )
+            if response and response.text:
+                reply_text = response.text.strip()
+                self.memory.add_message(chat_id, "model", [reply_text])
+                return reply_text
+        except Exception as e:
+            logger.error(f"Google Generative AI SDK Error: {e}")
 
         return None
 
@@ -236,12 +211,11 @@ class RoxieBot:
             return
 
         # دریافت عکس در صورت وجود
-        photo_base64 = None
+        photo_bytes = None
         if update.message.photo:
             try:
                 photo_file = await update.message.photo[-1].get_file()
                 photo_bytes = await photo_file.download_as_bytearray()
-                photo_base64 = base64.b64encode(photo_bytes).decode('utf-8')
             except Exception as e:
                 logger.error(f"Error downloading photo: {e}")
 
@@ -249,8 +223,8 @@ class RoxieBot:
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
         await self.enforce_rate_limit(chat_id)
 
-        # تولید پاسخ از Gemini
-        response = await self.call_gemini_api(chat_id, user_name, user_text, photo_base64)
+        # تولید پاسخ از SDK رسمی Gemini
+        response = await self.call_gemini_api(chat_id, user_name, user_text, photo_bytes)
 
         if response:
             if is_reply_to_bot or not is_group:
@@ -397,7 +371,7 @@ def main():
     app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), bot.handle_message))
 
     print("==================================================")
-    print("🤖 ربات روکسی هوشمند راه‌اندازی شد!")
+    print("🤖 ربات روکسی با SDK رسمی Google AI راه‌اندازی شد!")
     print(f"👑 سازنده: {Config.CREATOR_ID}")
     print("==================================================")
     
