@@ -138,16 +138,14 @@ class RoxieBot:
 
         api_key = Config.GEMINI_API_KEY.strip()
 
-        # هدر اختصاصی گوگل ای‌ای استودیو جهت پشتیبانی از کلیدهای جدید
         headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": api_key
+            "Content-Type": "application/json"
         }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             for model_name in models_to_try:
-                # ارسال مستقیم به گوگل ای‌ای استودیو
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+                # اصلاح مشکل ۴۰۱: اضافه کردن کلید API به صورت ?key= به آخر آدرس
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
                 try:
                     response = await client.post(url, json=payload, headers=headers)
                     if response.status_code == 200:
