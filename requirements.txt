@@ -1,4 +1,5 @@
-python-telegram-bot>=20.0
-google-generativeai>=0.4.0
-Pillow>=10.0.0
-python-dotenv>=1.0.0
+TELEGRAM_BOT_TOKEN=8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM
+GEMINI_API_KEY=AQ.Ab8RN6J26EbDB89-puTtS3Gliz6e4ife1ztrGcagD3w57Md3_g
+CREATOR_ID=993028263
+MODEL_NAME=gemini-2.0-flash
+MAX_HISTORY=5
