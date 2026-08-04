@@ -1,4 +1,4 @@
-[14/05/1405 02:26 ق.ظ] ameretat: import os
+import os
 import logging
 import asyncio
 import time
@@ -54,7 +54,7 @@ SYSTEM_PROMPT = """
 # 💾 مدیریت حافظه چت‌ها
 # ============================================================
 class ChatMemory:
-    def init(self, max_history: int = 5):
+    def __init__(self, max_history: int = 5):
         self.histories: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
         self.max_history = max_history
 
@@ -81,7 +81,7 @@ class ChatMemory:
 # 🤖 کلاس اصلی ربات روکسی
 # ============================================================
 class RoxieBot:
-    def init(self):
+    def __init__(self):
         self.memory = ChatMemory(max_history=Config.MAX_HISTORY)
         self.last_sent_time: Dict[int, float] = defaultdict(float)
         self.active_groups: Dict[int, str] = {}
@@ -99,7 +99,8 @@ class RoxieBot:
         if elapsed < Config.MIN_DELAY_SECONDS:
             await asyncio.sleep(Config.MIN_DELAY_SECONDS - elapsed)
         self.last_sent_time[chat_id] = time.time()
-[14/05/1405 02:26 ق.ظ] ameretat: async def call_gemini_api(self, chat_id: int, user_name: str, text: str) -> Optional[str]:
+
+    async def call_gemini_api(self, chat_id: int, user_name: str, text: str) -> Optional[str]:
         """ارسال درخواست به گوگل با کتابخانه جدید google-genai"""
         user_input = f"[{user_name}]: {text}" if text else f"[{user_name}] عکسی فرستاد."
         self.memory.add_message(chat_id, "user", user_input)
@@ -183,7 +184,7 @@ class RoxieBot:
                         return
 
         # فیلتر پاسخ در گروه‌ها
-[14/05/1405 02:26 ق.ظ] ameretat: bot_username = (await context.bot.get_me()).username.lower()
+        bot_username = (await context.bot.get_me()).username.lower()
         is_reply_to_bot = (
             update.message.reply_to_message and
             update.message.reply_to_message.from_user and
@@ -267,7 +268,8 @@ class RoxieBot:
             await update.message.reply_text(f"کاربر {target.first_name} بی‌صدا شد! 🔇")
         except Exception:
             await update.message.reply_text("نتونستم بی‌صدا کنم. مطمئن شو دسترسی ادمین دارم!")
-[14/05/1405 02:26 ق.ظ] ameretat: async def unmute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    async def unmute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.is_admin(update.effective_chat, update.effective_user.id):
             await update.message.reply_text("❌ فقط ادمین‌های این گروه می‌تونن از این دستور استفاده کنن!")
             return
@@ -305,7 +307,7 @@ class RoxieBot:
 
         msg = "📊 *لیست گروه‌هایی که ربات توی اون‌ها عضو هست:*\n\n"
         for g_id, g_title in self.active_groups.items():
-            msg += f"🔹 {g_title}\n🆔 ID: {g_id}\n\n"
+            msg += f"🔹 **{g_title}**\n🆔 `ID: {g_id}`\n\n"
 
         await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
@@ -314,7 +316,7 @@ class RoxieBot:
             return
 
         if not context.args:
-            await update.message.reply_text("لطفاً آیدی گروه را وارد کن! مثال:\n/leave -100123456789", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text("لطفاً آیدی گروه را وارد کن! مثال:\n`/leave -100123456789`", parse_mode=ParseMode.MARKDOWN)
             return
 
         target_chat_id = context.args[0]
@@ -343,7 +345,7 @@ def main():
     app.add_handler(CommandHandler("leave", bot.leave_command))
 
     app.add_handler(MessageHandler(
-        (filters.TEXT | filters.PHOTO) & (\~filters.COMMAND),
+        (filters.TEXT | filters.PHOTO) & (~filters.COMMAND),
         bot.handle_message
     ))
 
@@ -354,5 +356,5 @@ def main():
     
     app.run_polling(drop_pending_updates=True)
 
-if name == "main":
+if __name__ == "__main__":
     main()
