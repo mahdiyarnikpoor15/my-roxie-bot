@@ -103,7 +103,7 @@ class RoxieBot:
         self.last_sent_time[chat_id] = time.time()
 
     async def call_gemini_api(self, chat_id: int, user_name: str, text: str, photo_base64: Optional[str] = None) -> Optional[str]:
-        """ارسال درخواست به API Gemini با قابلیت پشتیبان خودکار"""
+        """ارسال درخواست به API Gemini با تشخیص هوشمند فرمت توکن"""
         
         user_parts = []
         if text:
@@ -122,7 +122,6 @@ class RoxieBot:
         self.memory.add_message(chat_id, "user", user_parts)
         contents = self.memory.get_history(chat_id)
 
-        # تلاش با مدل ۲ فلش و در صورت نیاز مدل ۱.۵ فلش
         models_to_try = [Config.MODEL_NAME, "gemini-1.5-flash", "gemini-2.0-flash-exp"]
 
         payload = {
@@ -136,13 +135,23 @@ class RoxieBot:
             }
         }
 
-        headers = {
-            "Content-Type": "application/json"
-        }
+        api_key = Config.GEMINI_API_KEY.strip()
+
+        # تشخیص هوشمند نحوه ارسال توکن بر اساس نوع آن
+        if api_key.startswith("AIzaSy"):
+            headers = {"Content-Type": "application/json"}
+            url_suffix = f"?key={api_key}"
+        else:
+            # برای توکن‌های AQ نباید کلمه ?key= در URL باشد!
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
+            url_suffix = ""
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             for model_name in models_to_try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={Config.GEMINI_API_KEY}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent{url_suffix}"
                 try:
                     response = await client.post(url, json=payload, headers=headers)
                     if response.status_code == 200:
@@ -388,9 +397,8 @@ def main():
     app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), bot.handle_message))
 
     print("==================================================")
-    print("🤖 ربات روکسی با Gemini 2.0 Flash راه‌اندازی شد!")
+    print("🤖 ربات روکسی هوشمند راه‌اندازی شد!")
     print(f"👑 سازنده: {Config.CREATOR_ID}")
-    print(f"🧠 مدل: {Config.MODEL_NAME}")
     print("==================================================")
     
     app.run_polling(drop_pending_updates=True)
