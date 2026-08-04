@@ -14,7 +14,7 @@ from telegram import (
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 )
-from telegram.constants import ParseMode, ChatMemberStatus, ChatType
+from telegram.constants import ParseMode, ChatMemberStatus, ChatType, ChatAction
 from groq import Groq, RateLimitError
 
 load_dotenv()
@@ -29,7 +29,7 @@ class Config:
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
     COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "6"))
     MAX_TOKENS = int(os.getenv("MAX_TOKENS", "500"))
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.65"))  # تنظیم روی ۰.۶۵ برای فارسی کاملاً روان و طبیعی
+    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.65"))
     TOP_P = float(os.getenv("TOP_P", "0.9"))
     MODEL = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
     FALLBACK_MODEL = "llama-3.1-8b-instant"
@@ -107,13 +107,11 @@ class RoxieBot:
             return False
 
     def clean_response(self, text: str) -> str:
-        """فیلتر پاکسازی پیشوندهای ناخواسته مثل [roxy]: یا کلمات عجیب"""
         text = re.sub(r"^(?:\[.*?\]|roxy|roxie|روکسی)\s*:\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"^\s*:\s*", "", text)
         return text.strip()
 
     async def generate_response(self, chat_id: int, user_id: int, user_name: str, text: str) -> Optional[str]:
-        # ذخیره پیام کاربر
         formatted_user_msg = f"{user_name}: {text}"
         self.memory.add_message(chat_id=chat_id, role="user", content=formatted_user_msg)
         history = self.memory.get_history(chat_id)
@@ -336,7 +334,7 @@ def main():
 
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🤖 روکسی با فارسی روان و بدون پیشوند راه‌اندازی شد...")
+    print("🤖 روکسی بدون ارور و با پشتیبانی ChatAction راه‌اندازی شد...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
