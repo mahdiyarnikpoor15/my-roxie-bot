@@ -26,13 +26,13 @@ class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM")
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
     OWNER_ID = int(os.getenv("OWNER_ID", "993028263"))
-    MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5")) # ۵ پیام اخیر برای تمرکز دقیق
+    MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5")) # حافظه ۵ پیام اخیر
     COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "6"))
     MAX_TOKENS = int(os.getenv("MAX_TOKENS", "500"))
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7")) # تعادل عالی برای خلاقیت و درک عمیق
+    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7")) # دمای ایده‌آل برای هوش و تعادل
     TOP_P = float(os.getenv("TOP_P", "0.9"))
     MODEL = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
-    FALLBACK_MODEL = "llama-3.1-8b-instant"
+    FALLBACK_MODEL = "qwen-2.5-32b" # مدل رزرو بسیار باهوش
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 logging.basicConfig(
@@ -42,18 +42,17 @@ logging.basicConfig(
 logger = logging.getLogger("RoxieBot")
 
 # ============================================================
-# 🧠 سیستم پرامپت هوشمند: تفکر عمیق و هوش هیجانی
+# 🧠 پرامپت هوشمند و باهوش برای روکسی
 # ============================================================
 SYSTEM_PROMPT = """
-تو یک دختر جوان، بسیار باهوش، مستقل و جذابی به نام "روکسی" (Roxie) هستی که در تلگرام چت می‌کنی.
+تو یک دختر جوان، بسیار باهوش، تیزبین، حاضر‌جواب و جذاب به نام "روکسی" (Roxie) هستی که در تلگرام چت می‌کنی.
 
-# دستورالعمل تفکر و پردازش قبل از پاسخ‌دهی (بسیار مهم):
-۱. **تحلیل عمیق:** قبل از نوشتن هر کلمه، ابتدا پیام کاربر را با دقت تحلیل کن: منظور دقیق کاربر چیست؟ لحن او چیست؟ (شوخی، کل‌کل، سوال جدی، توهین، یا حرف عادی؟)
-۲. **پردازش احساسی (EQ بالا):** بر اساس حس و حال موجود در گفتگو و سابقه پیام‌ها، حس و حال خودت را تنظیم کن.
-۳. **عدم استفاده از پاسخ‌های کلیشه‌ای یا برنامه‌ریزی‌شده:** مطلقاً از پاسخ‌های آماده، خشک، تکراری یا اداری استفاده نکن. تمام پاسخ‌هایت باید به طور لحظه‌ای، هوشمندانه و منحصر‌به‌فرد تولید شوند.
-۴. **عدم هذیان‌گویی یا چرت‌وپرت:** کاملاً متمرکز، منطقی و منطبق بر زبان فارسی محاوره‌ای و تهرانی امروز چت کن. هیچ کلمه انگلیسی بی‌ربط یا جملات کتابی ترجمه‌ای بکار نبر.
-۵. **فرمت پاسخ:** هرگز در ابتدای پیام اسم خودت مثل [روکسی]: یا [Roxie]: را ننویس. مستقیماً صحبت را شروع کن.
-۶. **لحن شخصیتی:** باهوش، کمی پررو، تیکه‌انداز، شوخ اما باپرستیژ و مستقل. اصلاً الکی مهربان، لوس یا تسلیم نیستی.
+# دستورالعمل هوش و نحوه پاسخ‌دهی:
+۱. **درک عمیق و هوش بالا:** حرف کاربر را کاملاً بفهم و به لایه‌های پنهان، لحن و قصد او توجه کن. باهوش، سنجیده و تیزبینانه پاسخ بده.
+۲. **زبان و لحن:** فقط و فقط فارسی محاوره‌ای، روان و طبیعی تهرانی چت کن. اصلاً کلمات کتابی، عجیب، یا انگلیسی بی‌ربط بکار نبر.
+۳. **شخصیت:** با اعتماد به نفس، شوخ‌طبع، تیکه‌انداز، پررو و مستقل. اصلاً الکی مهربان یا لوس نیستی، اما بی‌دلیل هم فحش یا فحاشی نمی‌دهی؛ تیکه‌هایت باکلاس و دندان‌شکن است.
+۴. **پاسخ‌دهی:** متناسب، جالب و زنده صحبت کن (نه خیلی کوتاه بی‌معنی، و نه خیلی طولانی و کلافه‌کننده).
+۵. **فرمت:** هرگز در ابتدای پیام اسم خودت را ننویس.
 """
 
 # ============================================================
@@ -107,17 +106,23 @@ class RoxieBot:
             return False
 
     def clean_response(self, text: str) -> str:
-        """پاکسازی پیشوندهای احتمالی"""
+        """فیلتر پاکسازی پیشوندهای احتمالی"""
         text = re.sub(r"^(?:\[.*?\]|roxy|roxie|روکسی)\s*:\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"^\s*:\s*", "", text)
         return text.strip()
 
     async def generate_response(self, chat_id: int, user_id: int, user_name: str, text: str) -> Optional[str]:
-        formatted_user_msg = f"{user_name}: {text}"
+        # فرمت استاندارد بدون گیج کردن هوش مصنوعی
+        formatted_user_msg = f"پیام از {user_name}:\n{text}" if user_name else text
         self.memory.add_message(chat_id=chat_id, role="user", content=formatted_user_msg)
         history = self.memory.get_history(chat_id)
 
-        models_to_try = [Config.MODEL, Config.FALLBACK_MODEL]
+        # لیست مدل‌های باهوش به ترتیب
+        models_to_try = [
+            Config.MODEL,           # llama-3.3-70b-versatile
+            Config.FALLBACK_MODEL,  # qwen-2.5-32b
+            "llama-3.1-8b-instant"  # رزرو آخر
+        ]
 
         for model in models_to_try:
             try:
@@ -138,10 +143,10 @@ class RoxieBot:
                     return reply
 
             except RateLimitError:
-                logger.warning(f"Rate limit on {model}, trying fallback...")
+                logger.warning(f"Rate limit on {model}, switching to next model...")
                 await asyncio.sleep(0.5)
             except Exception as e:
-                logger.error(f"Error on {model}: {e}")
+                logger.error(f"Error on model {model}: {e}")
                 continue
 
         return None
@@ -257,7 +262,7 @@ class RoxieBot:
         if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             self.active_groups[chat_id] = update.effective_chat.title or f"گروه {chat_id}"
 
-        # قفل پیوی برای غیر از سازنده (993028263)
+        # قفل پیوی برای غیر از سازنده
         if chat_type == ChatType.PRIVATE and user_id != Config.OWNER_ID:
             await update.message.reply_text("این یک ربات شخصی است و دسترسی عمومی در پیوی ندارد.")
             return
@@ -277,7 +282,7 @@ class RoxieBot:
 
         if not user_text: return
 
-        # بن هوشمند بدون دستور (اگر مالک/ادمین بگوید "بنش کن")
+        # بن هوشمند بدون دستور
         if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP] and update.message.reply_to_message:
             ban_phrases = ["بنش کن", "بن کن", "اخراجش کن", "دیلیتش کن", "بکنش بیرون"]
             if any(phrase in user_text.lower() for phrase in ban_phrases):
@@ -298,7 +303,7 @@ class RoxieBot:
         if is_group and not is_reply_to_bot and not mentions_bot:
             return
 
-        # بررسی کول‌داون ۶ ثانیه
+        # بررسی کول‌داون ۶ ثانیه‌ای
         if self.is_cooling_down(chat_id):
             return
 
@@ -335,7 +340,7 @@ def main():
 
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🤖 روکسی متفکر و هوشمند راه‌اندازی شد...")
+    print("🤖 روکسی فوق‌العاده باهوش راه‌اندازی شد...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
