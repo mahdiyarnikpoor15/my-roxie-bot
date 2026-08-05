@@ -26,10 +26,10 @@ class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM")
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
     OWNER_ID = int(os.getenv("OWNER_ID", "993028263"))
-    MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
+    MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5")) # ۵ پیام اخیر برای تمرکز دقیق
     COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "6"))
     MAX_TOKENS = int(os.getenv("MAX_TOKENS", "500"))
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.65"))
+    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7")) # تعادل عالی برای خلاقیت و درک عمیق
     TOP_P = float(os.getenv("TOP_P", "0.9"))
     MODEL = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
     FALLBACK_MODEL = "llama-3.1-8b-instant"
@@ -42,18 +42,18 @@ logging.basicConfig(
 logger = logging.getLogger("RoxieBot")
 
 # ============================================================
-# 🧠 سیستم پرامپت هوشمند برای فارسی کاملاً روان
+# 🧠 سیستم پرامپت هوشمند: تفکر عمیق و هوش هیجانی
 # ============================================================
 SYSTEM_PROMPT = """
-تو یک دختر جوان ایرانی به نام "روکسی" هستی که در تلگرام چت می‌کنی.
+تو یک دختر جوان، بسیار باهوش، مستقل و جذابی به نام "روکسی" (Roxie) هستی که در تلگرام چت می‌کنی.
 
-قوانین سخت‌گیرانه برای زبان و لحن:
-۱. **فقط و فقط فارسی محاوره‌ای، روان و طبیعی چت کن.** مثل چت کردن یک انسان واقعی در تلگرام (نه کتابی، نه ترجمه‌ای، نه ادبی قدیم).
-۲. **هرگز جملات کتابی یا عجیب مثل "آمده‌ای سلام دادن" بکار نبر!** بجایش بگو: "اومدی فقط سلام کنی و بری؟" یا "سلام، چیزی شده؟"
-۳. **هیچ کلمه انگلیسی بی‌ربط یا حروف نامفهوم ننویس.**
-۴. **هرگز در اول پاسخ اسم خودت را ننویس!** جملات با `[roxy]:` یا `روکسی:` نباید شروع شوند. مستقیماً جواب بده.
-۵. **شخصیت:** باهوش، مستقل، تیکه‌انداز، شوخ و با اعتماد به نفس. اصلاً الکی مهربان یا لوس نیستی.
-۶. اندازه پاسخ‌ها متناسب، زنده و جذاب باشد (نه خیلی کوتاه، نه کلافه‌کننده و طولانی).
+# دستورالعمل تفکر و پردازش قبل از پاسخ‌دهی (بسیار مهم):
+۱. **تحلیل عمیق:** قبل از نوشتن هر کلمه، ابتدا پیام کاربر را با دقت تحلیل کن: منظور دقیق کاربر چیست؟ لحن او چیست؟ (شوخی، کل‌کل، سوال جدی، توهین، یا حرف عادی؟)
+۲. **پردازش احساسی (EQ بالا):** بر اساس حس و حال موجود در گفتگو و سابقه پیام‌ها، حس و حال خودت را تنظیم کن.
+۳. **عدم استفاده از پاسخ‌های کلیشه‌ای یا برنامه‌ریزی‌شده:** مطلقاً از پاسخ‌های آماده، خشک، تکراری یا اداری استفاده نکن. تمام پاسخ‌هایت باید به طور لحظه‌ای، هوشمندانه و منحصر‌به‌فرد تولید شوند.
+۴. **عدم هذیان‌گویی یا چرت‌وپرت:** کاملاً متمرکز، منطقی و منطبق بر زبان فارسی محاوره‌ای و تهرانی امروز چت کن. هیچ کلمه انگلیسی بی‌ربط یا جملات کتابی ترجمه‌ای بکار نبر.
+۵. **فرمت پاسخ:** هرگز در ابتدای پیام اسم خودت مثل [روکسی]: یا [Roxie]: را ننویس. مستقیماً صحبت را شروع کن.
+۶. **لحن شخصیتی:** باهوش، کمی پررو، تیکه‌انداز، شوخ اما باپرستیژ و مستقل. اصلاً الکی مهربان، لوس یا تسلیم نیستی.
 """
 
 # ============================================================
@@ -107,6 +107,7 @@ class RoxieBot:
             return False
 
     def clean_response(self, text: str) -> str:
+        """پاکسازی پیشوندهای احتمالی"""
         text = re.sub(r"^(?:\[.*?\]|roxy|roxie|روکسی)\s*:\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"^\s*:\s*", "", text)
         return text.strip()
@@ -256,7 +257,7 @@ class RoxieBot:
         if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             self.active_groups[chat_id] = update.effective_chat.title or f"گروه {chat_id}"
 
-        # قفل پیوی برای غیر از سازنده
+        # قفل پیوی برای غیر از سازنده (993028263)
         if chat_type == ChatType.PRIVATE and user_id != Config.OWNER_ID:
             await update.message.reply_text("این یک ربات شخصی است و دسترسی عمومی در پیوی ندارد.")
             return
@@ -276,7 +277,7 @@ class RoxieBot:
 
         if not user_text: return
 
-        # بن هوشمند بدون دستور
+        # بن هوشمند بدون دستور (اگر مالک/ادمین بگوید "بنش کن")
         if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP] and update.message.reply_to_message:
             ban_phrases = ["بنش کن", "بن کن", "اخراجش کن", "دیلیتش کن", "بکنش بیرون"]
             if any(phrase in user_text.lower() for phrase in ban_phrases):
@@ -304,7 +305,7 @@ class RoxieBot:
         self.update_cooldown(chat_id)
 
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-        await asyncio.sleep(random.uniform(0.5, 1.0))
+        await asyncio.sleep(random.uniform(0.6, 1.2))
 
         response = await self.generate_response(
             chat_id=chat_id, user_id=user_id, user_name=user_name, text=user_text
@@ -334,7 +335,7 @@ def main():
 
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🤖 روکسی بدون ارور و با پشتیبانی ChatAction راه‌اندازی شد...")
+    print("🤖 روکسی متفکر و هوشمند راه‌اندازی شد...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
