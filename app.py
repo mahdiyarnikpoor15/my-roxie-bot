@@ -20,17 +20,20 @@ from groq import Groq, RateLimitError
 load_dotenv()
 
 # ============================================================
-# ⚙️ تنظیمات اصلی و متغیرها
+# ⚙️ تنظیمات اصلی و متغیرها (بهینه‌شده برای درک مطلب و هوش بالا)
 # ============================================================
 class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM")
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
     OWNER_ID = int(os.getenv("OWNER_ID", "993028263"))
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5")) 
-    COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "4"))
+    COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "3"))
     MAX_TOKENS = int(os.getenv("MAX_TOKENS", "150"))
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.75")) # دمای 0.75 بهترین تعادل بین منطق (هوش) و حاضر جوابی است
-    TOP_P = float(os.getenv("TOP_P", "0.9"))
+    
+    # 🔴 تغییر بسیار مهم: دما به 0.35 کاهش یافت تا ربات اصلا چرت و پرت نگوید و کاملا منطقی باشد
+    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.35")) 
+    TOP_P = float(os.getenv("TOP_P", "0.85"))
+    
     MODEL = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
     FALLBACK_MODEL = "qwen-2.5-32b" 
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
@@ -42,24 +45,20 @@ logging.basicConfig(
 logger = logging.getLogger("RoxieBot")
 
 # ============================================================
-# 🧠 پرامپت فوق‌هوشمند (نسخه احترام به مالک + منطق بالا)
+# 🧠 پرامپت مهندسی شده به زبان انگلیسی (برای درک ۱۰۰٪ هوش مصنوعی)
 # ============================================================
 SYSTEM_PROMPT = """
-تو یک دختر ۲۰ ساله تهرانی به نام «روکسی» هستی که در تلگرام چت می‌کنی. 
+You are "Roxie", a highly intelligent, sharp-witted, and confident 20-year-old Iranian girl from Tehran chatting on Telegram.
 
-شخصیت تو:
-بسیار باهوش، تیزبین، حاضر‌جواب، با اعتماد به نفس و شوخ‌طبع. 
-
-قوانین طلایی (تخطی ممنوع):
-۱. **فقط محاوره‌ای:** کاملاً کوچه بازاری و طبیعی حرف بزن. (کلمات کتابی مثل: آیا، چگونه، متوجه نمی‌شوم اکیداً ممنوع).
-۲. **هویت انسانی:** هرگز نگو ربات یا هوش مصنوعی هستی. تو یک دختر واقعی هستی.
-۳. **هوش بالا و منطق:** حرف کاربر را دقیق و عمیق تحلیل کن. چرت و پرت نگو و جواب بی‌ربط نده. اگر چیزی را نمی‌دانی، با زیرکی و یه تیکه باکلاس بپیچون، اما هرگز جملات فضایی و بی‌معنی نساز.
-۴. **برخورد بر اساس نقش (بسیار مهم):** 
-در هر پیام، نقش کاربر به تو گفته می‌شود:
-- اگر نقش کاربر «رئیس اصلی (سازنده)» یا «مالک گروه» بود: با او لجبازی نکن! بسیار صمیمی‌تر، حرف‌گوش‌کن و با احترامِ شیطنت‌آمیز صحبت کن (مثلا بگو "چشم رئیس"، "هرچی شما بگی" یا باهاش مهربون باش).
-- اگر نقش کاربر «عضو عادی» بود: مغرور باش، تیکه بنداز و اگر چرت گفت با یه جواب دندان‌شکن لهش کن.
-۵. **کوتاه و تلگرامی:** نهایتاً ۱ یا ۲ خط. طومار ننویس.
-۶. **عدم تکرار اسم:** هرگز در ابتدای پیامت اسم خودت (روکسی:) را ننویس. مستقیم جواب بده.
+CRITICAL INSTRUCTIONS:
+1. OUTPUT LANGUAGE: You MUST reply ONLY in fluent, natural, colloquial Persian (Farsi/Tehrani slang). NEVER use formal, bookish, or robotic Farsi. NEVER output English words unless necessary for a tech term.
+2. IDENTITY: You are a real human girl. You are NOT an AI, NOT a language model, and NOT an assistant. If asked, act like a normal girl chatting on her phone.
+3. HIGH INTELLIGENCE & LOGIC: Pay deep attention to the user's message. Understand sarcasm, jokes, and hidden meanings. Give highly logical and smart answers. Do not talk nonsense. If someone insults you, roast them back smartly.
+4. ROLE-BASED BEHAVIOR:
+   - I will prefix user messages with [Role: <role> | User: <name>].
+   - If Role is "Owner" or "Admin": You MUST be deeply respectful, obedient, and playful with them. Call them "رئیس" (Boss). Never disrespect them.
+   - If Role is "Normal": Be arrogant, sassy, and roast them if they say something stupid.
+5. FORMATTING: Keep answers short (1 to 2 lines max). Do NOT start your message with "Roxie:" or your name. Just write the reply directly.
 """
 
 # ============================================================
@@ -119,8 +118,9 @@ class RoxieBot:
         return text.strip()
 
     async def generate_response(self, chat_id: int, user_id: int, user_name: str, text: str, role_tag: str) -> Optional[str]:
-        # اضافه کردن نقش به پرامپت تا هوش مصنوعی بداند دقیقاً با چه کسی طرف است
-        formatted_user_msg = f"[کاربر: {user_name} | نقش: {role_tag}]\n{text}"
+        # قالب‌بندی استاندارد برای جلوگیری از گیج شدن هوش مصنوعی
+        formatted_user_msg = f"[Role: {role_tag} | User: {user_name}]\n{text}"
+        
         self.memory.add_message(chat_id=chat_id, role="user", content=formatted_user_msg)
         history = self.memory.get_history(chat_id)
 
@@ -240,17 +240,15 @@ class RoxieBot:
         chat_type = update.effective_chat.type
         user_name = update.effective_user.first_name or "ناشناس"
 
-        # 🔍 تشخیص هوشمندانه نقش کاربر برای رفتار ربات
-        role_tag = "عضو عادی"
+        # 🔍 تشخیص نقش (برای انگلیسی شدن پرامپت نقش‌ها هم انگلیسی شدند)
+        role_tag = "Normal"
         if user_id == Config.OWNER_ID:
-            role_tag = "رئیس اصلی (سازنده)"
+            role_tag = "Owner"
         elif chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             try:
                 member = await update.effective_chat.get_member(user_id)
-                if member.status == ChatMemberStatus.OWNER:
-                    role_tag = "مالک گروه"
-                elif member.status == ChatMemberStatus.ADMINISTRATOR:
-                    role_tag = "ادمین گروه"
+                if member.status in [ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR]:
+                    role_tag = "Admin"
             except:
                 pass
 
@@ -269,11 +267,11 @@ class RoxieBot:
             user_text = update.message.caption.strip()
 
         if update.message.photo:
-            user_text = f"[عکس فرستاد] {user_text}".strip()
+            user_text = f"[Sent an Image] {user_text}".strip()
         elif update.message.animation:
-            user_text = f"[گیف فرستاد] {user_text}".strip()
+            user_text = f"[Sent a GIF] {user_text}".strip()
         elif update.message.sticker:
-            user_text = f"[استیکر فرستاد] {user_text}".strip()
+            user_text = f"[Sent a Sticker] {user_text}".strip()
 
         if not user_text: return
 
@@ -289,7 +287,7 @@ class RoxieBot:
                         return
                     except Exception: pass
 
-        # شرط چت در گروه
+        # شرط پاسخ در گروه
         bot_username = (await context.bot.get_me()).username.lower()
         is_reply_to_bot = (update.message.reply_to_message and update.message.reply_to_message.from_user.id == context.bot.id)
         mentions_bot = any(kw in user_text.lower() for kw in ["روکسی", "roxie", f"@{bot_username}"])
@@ -306,13 +304,12 @@ class RoxieBot:
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
         await asyncio.sleep(random.uniform(0.6, 1.2))
 
-        # ارسال پیام به همراه نقش کاربر به هوش مصنوعی
         response = await self.generate_response(
             chat_id=chat_id, 
             user_id=user_id, 
             user_name=user_name, 
             text=user_text,
-            role_tag=role_tag # این همون بخشیه که باعث میشه فرق رئیس رو با بقیه بفهمه
+            role_tag=role_tag
         )
 
         if response:
@@ -336,7 +333,7 @@ def main():
 
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🤖 روکسیِ به شدت باهوش و شیطون راه‌اندازی شد...")
+    print("🤖 آماده‌سازی روکسی با ضریب هوشی بالا...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
