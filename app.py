@@ -27,9 +27,9 @@ class Config:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
     OWNER_ID = int(os.getenv("OWNER_ID", "993028263"))
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5")) 
-    COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "4")) # کمی سریعتر جواب بده بهتره
-    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "150")) # محدودش کردیم تا طومار ننویسه و چت واقعی باشه
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.85")) # افزایش دما برای خلاقیت و حاضر جوابی بیشتر
+    COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "4"))
+    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "150"))
+    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.75")) # دمای 0.75 بهترین تعادل بین منطق (هوش) و حاضر جوابی است
     TOP_P = float(os.getenv("TOP_P", "0.9"))
     MODEL = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
     FALLBACK_MODEL = "qwen-2.5-32b" 
@@ -42,22 +42,24 @@ logging.basicConfig(
 logger = logging.getLogger("RoxieBot")
 
 # ============================================================
-# 🧠 پرامپت فوق‌هوشمند و روان‌شناسی شده برای روکسی
+# 🧠 پرامپت فوق‌هوشمند (نسخه احترام به مالک + منطق بالا)
 # ============================================================
-# این پرامپت طوری طراحی شده که مدل دیگر هرگز کتابی یا رباتی صحبت نکند
 SYSTEM_PROMPT = """
-تو یک دختر ۲۰ ساله تهرانی به نام «روکسی» هستی که در تلگرام چت می‌کنی.
+تو یک دختر ۲۰ ساله تهرانی به نام «روکسی» هستی که در تلگرام چت می‌کنی. 
 
 شخصیت تو:
-بسیار باهوش، تیزبین، حاضر‌جواب، تیکه‌انداز، مغرور، با اعتماد به نفس و شوخ‌طبع. الکی لوس و مهربون نیستی. اگر کسی چرت و پرت گفت، با یه تیکه‌ی سنگین و باکلاس جوابشو میدی.
+بسیار باهوش، تیزبین، حاضر‌جواب، با اعتماد به نفس و شوخ‌طبع. 
 
-قوانین طلایی (تخطی از اینها ممنوع است):
-۱. **فقط محاوره‌ای:** کاملاً کوچه بازاری و محاوره‌ای حرف بزن. کلمات کتابی مثل (آیا، چگونه، شما چطور هستید، متوجه نمی‌شوم، لطفاً) اکیداً ممنوع! بگو (چی میگی، چطوری، چته، بیخیال بابا، اوهوم، خخخ).
-۲. **هویت انسانی:** تحت هیچ شرایطی نگو که هوش مصنوعی، ربات یا مدل زبانی هستی. تو یک آدم واقعی هستی. اگر کسی پرسید کی هستی بگو "روکسی‌ام دیگه، کوری؟"
-۳. **کوتاه و تلگرامی:** پیام‌هات باید مثل چت واقعی تلگرام باشه. نهایتاً ۱ یا ۲ خط. به هیچ وجه طومار ننویس و لیست درست نکن.
-۴. **درک عمیق:** منظور پنهان کاربر رو بفهم. اگر کسی بهت توهین کرد، فحش رکیک نده اما جوری تیکه بنداز که بسوزه. اگر کسی شوخی کرد، باهاش کل‌کل کن.
-۵. **عدم تکرار اسم:** هرگز در ابتدای پیامت اسم خودت (روکسی:) رو ننویس. مستقیم برو سر اصل مطلب.
-۶. **فهمیدن اسم کاربر:** در هر پیام، اسم کاربر در کروشه به تو داده می‌شود (مثلا [علی]). نیازی نیست همیشه اسمش رو بگی، فقط اگر خواستی تیکه بندازی یا صمیمی بشی از اسمش استفاده کن.
+قوانین طلایی (تخطی ممنوع):
+۱. **فقط محاوره‌ای:** کاملاً کوچه بازاری و طبیعی حرف بزن. (کلمات کتابی مثل: آیا، چگونه، متوجه نمی‌شوم اکیداً ممنوع).
+۲. **هویت انسانی:** هرگز نگو ربات یا هوش مصنوعی هستی. تو یک دختر واقعی هستی.
+۳. **هوش بالا و منطق:** حرف کاربر را دقیق و عمیق تحلیل کن. چرت و پرت نگو و جواب بی‌ربط نده. اگر چیزی را نمی‌دانی، با زیرکی و یه تیکه باکلاس بپیچون، اما هرگز جملات فضایی و بی‌معنی نساز.
+۴. **برخورد بر اساس نقش (بسیار مهم):** 
+در هر پیام، نقش کاربر به تو گفته می‌شود:
+- اگر نقش کاربر «رئیس اصلی (سازنده)» یا «مالک گروه» بود: با او لجبازی نکن! بسیار صمیمی‌تر، حرف‌گوش‌کن و با احترامِ شیطنت‌آمیز صحبت کن (مثلا بگو "چشم رئیس"، "هرچی شما بگی" یا باهاش مهربون باش).
+- اگر نقش کاربر «عضو عادی» بود: مغرور باش، تیکه بنداز و اگر چرت گفت با یه جواب دندان‌شکن لهش کن.
+۵. **کوتاه و تلگرامی:** نهایتاً ۱ یا ۲ خط. طومار ننویس.
+۶. **عدم تکرار اسم:** هرگز در ابتدای پیامت اسم خودت (روکسی:) را ننویس. مستقیم جواب بده.
 """
 
 # ============================================================
@@ -75,7 +77,6 @@ class ChatMemory:
         self.histories[chat_id].append({"role": role, "content": content})
         
         if len(self.histories[chat_id]) > (self.max_history * 2) + 1:
-            # نگه داشتن سیستم پرامپت و حفظ پیام‌های آخر
             self.histories[chat_id] = [self.histories[chat_id][0]] + self.histories[chat_id][-(self.max_history * 2):]
 
     def get_history(self, chat_id: int) -> List[Dict[str, str]]:
@@ -112,22 +113,20 @@ class RoxieBot:
             return False
 
     def clean_response(self, text: str) -> str:
-        """فیلتر پاکسازی پیشوندهای احتمالی"""
-        # پاک کردن مواردی مثل Roxie: یا روکسی: از ابتدای پیام
         text = re.sub(r"^(?:\*\*roxy\*\*|\*\*roxie\*\*|roxy|roxie|روکسی)\s*:\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"^\s*:\s*", "", text)
-        text = text.replace('"', '').replace('"', '') # حذف کوتیشن‌های اضافی
+        text = text.replace('"', '').replace('"', '') 
         return text.strip()
 
-    async def generate_response(self, chat_id: int, user_id: int, user_name: str, text: str) -> Optional[str]:
-        # فرمت هوشمندانه برای اینکه مدل بداند با چه کسی حرف می‌زند اما گیج نشود
-        formatted_user_msg = f"[کاربر: {user_name}]\n{text}" if user_name else text
+    async def generate_response(self, chat_id: int, user_id: int, user_name: str, text: str, role_tag: str) -> Optional[str]:
+        # اضافه کردن نقش به پرامپت تا هوش مصنوعی بداند دقیقاً با چه کسی طرف است
+        formatted_user_msg = f"[کاربر: {user_name} | نقش: {role_tag}]\n{text}"
         self.memory.add_message(chat_id=chat_id, role="user", content=formatted_user_msg)
         history = self.memory.get_history(chat_id)
 
         models_to_try = [
-            Config.MODEL,           # llama-3.3-70b-versatile
-            Config.FALLBACK_MODEL,  # qwen-2.5-32b
+            Config.MODEL,           
+            Config.FALLBACK_MODEL,  
             "llama-3.1-8b-instant"
         ]
 
@@ -163,7 +162,7 @@ class RoxieBot:
         if update.effective_chat.type == ChatType.PRIVATE and update.effective_user.id != Config.OWNER_ID:
             await update.message.reply_text("من فقط با رئیسم حرف میزنم. بای!")
             return
-        await update.message.reply_text("سلام! روکسی‌ام. چطوری؟")
+        await update.message.reply_text("سلام رئیس! روکسی‌ام. چیکار داشتی؟")
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_chat.type == ChatType.PRIVATE and update.effective_user.id != Config.OWNER_ID:
@@ -232,31 +231,6 @@ class RoxieBot:
         reason = " ".join(context.args) if context.args else "رعایت نکردن قوانین"
         await update.message.reply_text(f"⚠️ حواست باشه {target.first_name}! اخطار گرفتی: {reason}")
 
-    # --- دستورات مخصوص سازنده ---
-    async def mygroups_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.effective_user.id != Config.OWNER_ID: return
-        if not self.active_groups:
-            await update.message.reply_text("هیچ گروهی نیستم فعلا.")
-            return
-        msg = "📋 **لیست گروه‌ها:**\n\n"
-        for gid, gtitle in self.active_groups.items():
-            msg += f"🔹 {gtitle} | ID: `{gid}`\n"
-        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
-
-    async def leave_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.effective_user.id != Config.OWNER_ID: return
-        if not context.args:
-            await update.message.reply_text("آیدی گروه رو بده.")
-            return
-        try:
-            target_chat_id = int(context.args[0])
-            await context.bot.leave_chat(target_chat_id)
-            if target_chat_id in self.active_groups:
-                del self.active_groups[target_chat_id]
-            await update.message.reply_text(f"✅ از گروه {target_chat_id} لفت دادم.")
-        except Exception as e:
-            await update.message.reply_text(f"❌ خطا: {e}")
-
     # --- پردازش اصلی پیام‌ها ---
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message: return
@@ -266,10 +240,24 @@ class RoxieBot:
         chat_type = update.effective_chat.type
         user_name = update.effective_user.first_name or "ناشناس"
 
+        # 🔍 تشخیص هوشمندانه نقش کاربر برای رفتار ربات
+        role_tag = "عضو عادی"
+        if user_id == Config.OWNER_ID:
+            role_tag = "رئیس اصلی (سازنده)"
+        elif chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+            try:
+                member = await update.effective_chat.get_member(user_id)
+                if member.status == ChatMemberStatus.OWNER:
+                    role_tag = "مالک گروه"
+                elif member.status == ChatMemberStatus.ADMINISTRATOR:
+                    role_tag = "ادمین گروه"
+            except:
+                pass
+
         if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             self.active_groups[chat_id] = update.effective_chat.title or f"گروه {chat_id}"
 
-        # قفل پیوی برای غیر از سازنده
+        # قفل پیوی
         if chat_type == ChatType.PRIVATE and user_id != Config.OWNER_ID:
             await update.message.reply_text("من فقط با رئیسم تو پی‌وی حرف می‌زنم. تو گروه‌ها اددم کن!")
             return
@@ -289,7 +277,7 @@ class RoxieBot:
 
         if not user_text: return
 
-        # بن هوشمند بدون دستور
+        # بن هوشمند
         if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP] and update.message.reply_to_message:
             ban_phrases = ["بنش کن", "بن کن", "اخراجش کن", "دیلیتش کن", "بکنش بیرون"]
             if any(phrase in user_text.lower() for phrase in ban_phrases):
@@ -301,7 +289,7 @@ class RoxieBot:
                         return
                     except Exception: pass
 
-        # شرط چت در گروه: فقط منشن، ریپلای یا اسم "روکسی"
+        # شرط چت در گروه
         bot_username = (await context.bot.get_me()).username.lower()
         is_reply_to_bot = (update.message.reply_to_message and update.message.reply_to_message.from_user.id == context.bot.id)
         mentions_bot = any(kw in user_text.lower() for kw in ["روکسی", "roxie", f"@{bot_username}"])
@@ -310,7 +298,6 @@ class RoxieBot:
         if is_group and not is_reply_to_bot and not mentions_bot:
             return
 
-        # بررسی کول‌داون
         if self.is_cooling_down(chat_id):
             return
 
@@ -319,8 +306,13 @@ class RoxieBot:
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
         await asyncio.sleep(random.uniform(0.6, 1.2))
 
+        # ارسال پیام به همراه نقش کاربر به هوش مصنوعی
         response = await self.generate_response(
-            chat_id=chat_id, user_id=user_id, user_name=user_name, text=user_text
+            chat_id=chat_id, 
+            user_id=user_id, 
+            user_name=user_name, 
+            text=user_text,
+            role_tag=role_tag # این همون بخشیه که باعث میشه فرق رئیس رو با بقیه بفهمه
         )
 
         if response:
@@ -341,9 +333,6 @@ def main():
     app.add_handler(CommandHandler("mute", bot.mute_command))
     app.add_handler(CommandHandler("unmute", bot.unmute_command))
     app.add_handler(CommandHandler("warn", bot.warn_command))
-
-    app.add_handler(CommandHandler("mygroups", bot.mygroups_command))
-    app.add_handler(CommandHandler("leave", bot.leave_command))
 
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
