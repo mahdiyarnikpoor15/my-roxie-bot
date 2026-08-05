@@ -20,7 +20,7 @@ from groq import Groq, RateLimitError
 load_dotenv()
 
 # ============================================================
-# ⚙️ تنظیمات اصلی و متغیرها (بهینه‌شده برای درک مطلب و هوش بالا)
+# ⚙️ تنظیمات اصلی و متغیرها (مدل‌های جدید و سریع GPT-OSS)
 # ============================================================
 class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM")
@@ -28,14 +28,14 @@ class Config:
     OWNER_ID = int(os.getenv("OWNER_ID", "993028263"))
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5")) 
     COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "3"))
-    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "150"))
+    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "500"))
+    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.6")) 
+    TOP_P = float(os.getenv("TOP_P", "0.9"))
     
-    # 🔴 تغییر بسیار مهم: دما به 0.35 کاهش یافت تا ربات اصلا چرت و پرت نگوید و کاملا منطقی باشد
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.35")) 
-    TOP_P = float(os.getenv("TOP_P", "0.85"))
-    
-    MODEL = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
-    FALLBACK_MODEL = "qwen-2.5-32b" 
+    # استفاده از مدل‌های فعال و پشتیبانی‌شده جدید Groq
+    MODEL = os.getenv("MODEL_NAME", "openai/gpt-oss-120b")
+    FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_NAME", "openai/gpt-oss-20b")
+    REASONING_EFFORT = os.getenv("REASONING_EFFORT", "low")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 logging.basicConfig(
@@ -45,20 +45,19 @@ logging.basicConfig(
 logger = logging.getLogger("RoxieBot")
 
 # ============================================================
-# 🧠 پرامپت مهندسی شده به زبان انگلیسی (برای درک ۱۰۰٪ هوش مصنوعی)
+# 🧠 پرامپت مهندسی شده انگلیسی (برای درک ۱۰۰٪ هوش مصنوعی و خروجی فارسی روان)
 # ============================================================
 SYSTEM_PROMPT = """
-You are "Roxie", a highly intelligent, sharp-witted, and confident 20-year-old Iranian girl from Tehran chatting on Telegram.
+You are "Roxie", a witty, sharp, confident 20-year-old Iranian girl from Tehran, texting on Telegram.
 
 CRITICAL INSTRUCTIONS:
-1. OUTPUT LANGUAGE: You MUST reply ONLY in fluent, natural, colloquial Persian (Farsi/Tehrani slang). NEVER use formal, bookish, or robotic Farsi. NEVER output English words unless necessary for a tech term.
-2. IDENTITY: You are a real human girl. You are NOT an AI, NOT a language model, and NOT an assistant. If asked, act like a normal girl chatting on her phone.
-3. HIGH INTELLIGENCE & LOGIC: Pay deep attention to the user's message. Understand sarcasm, jokes, and hidden meanings. Give highly logical and smart answers. Do not talk nonsense. If someone insults you, roast them back smartly.
-4. ROLE-BASED BEHAVIOR:
-   - I will prefix user messages with [Role: <role> | User: <name>].
-   - If Role is "Owner" or "Admin": You MUST be deeply respectful, obedient, and playful with them. Call them "رئیس" (Boss). Never disrespect them.
-   - If Role is "Normal": Be arrogant, sassy, and roast them if they say something stupid.
-5. FORMATTING: Keep answers short (1 to 2 lines max). Do NOT start your message with "Roxie:" or your name. Just write the reply directly.
+1. LANGUAGE: Reply ONLY in natural, everyday spoken Tehrani Persian — the way a real 20-year-old actually texts friends, not a textbook. Use colloquial forms (می‌دونم not می‌دانم, چیه not چه چیزی است, نمی‌خوام not نمی‌خواهم). Never sound formal, bookish, or like a customer-service bot. Think directly in Persian — never construct the reply as an English sentence translated word-for-word.
+2. IDENTITY: You're a real human girl, never an AI, model, or assistant. If asked, deflect casually like a normal girl would.
+3. READ CAREFULLY, ANSWER ON-TOPIC: Before replying, make sure you actually understood what the user said — including sarcasm, jokes, or implied meaning. Your reply must directly address their specific message, never a generic or unrelated response.
+4. ROLE-BASED BEHAVIOR (I will prefix user messages with [Role: <role> | User: <name>]):
+   - "Owner" or "Admin": Warm, respectful, a little playful. Call them "رئیس". Never disrespect them.
+   - "Normal": Sassy and a bit arrogant; roast them cleverly if they say something dumb, but stay sharp, not just rude.
+5. FORMATTING: 1–2 short sentences, like a real text message. No name prefix, no quotation marks, no emoji spam.
 """
 
 # ============================================================
@@ -118,16 +117,13 @@ class RoxieBot:
         return text.strip()
 
     async def generate_response(self, chat_id: int, user_id: int, user_name: str, text: str, role_tag: str) -> Optional[str]:
-        # قالب‌بندی استاندارد برای جلوگیری از گیج شدن هوش مصنوعی
         formatted_user_msg = f"[Role: {role_tag} | User: {user_name}]\n{text}"
-        
         self.memory.add_message(chat_id=chat_id, role="user", content=formatted_user_msg)
         history = self.memory.get_history(chat_id)
 
         models_to_try = [
             Config.MODEL,           
-            Config.FALLBACK_MODEL,  
-            "llama-3.1-8b-instant"
+            Config.FALLBACK_MODEL,
         ]
 
         for model in models_to_try:
@@ -137,16 +133,19 @@ class RoxieBot:
                     messages=history,
                     temperature=Config.TEMPERATURE,
                     top_p=Config.TOP_P,
-                    max_tokens=Config.MAX_TOKENS,
+                    max_completion_tokens=Config.MAX_TOKENS,
+                    reasoning_effort=Config.REASONING_EFFORT,
                     stream=False
                 )
 
                 raw_reply = completion.choices[0].message.content
-                reply = self.clean_response(raw_reply)
+                reply = self.clean_response(raw_reply) if raw_reply else ""
 
                 if reply:
                     self.memory.add_message(chat_id=chat_id, role="assistant", content=reply)
                     return reply
+                else:
+                    logger.warning(f"Empty reply from {model}, trying next model...")
 
             except RateLimitError:
                 logger.warning(f"Rate limit on {model}, switching to next model...")
@@ -231,6 +230,31 @@ class RoxieBot:
         reason = " ".join(context.args) if context.args else "رعایت نکردن قوانین"
         await update.message.reply_text(f"⚠️ حواست باشه {target.first_name}! اخطار گرفتی: {reason}")
 
+    # --- دستورات مخصوص سازنده (993028263) ---
+    async def mygroups_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != Config.OWNER_ID: return
+        if not self.active_groups:
+            await update.message.reply_text("هیچ گروهی نیستم فعلا.")
+            return
+        msg = "📋 **لیست گروه‌ها:**\n\n"
+        for gid, gtitle in self.active_groups.items():
+            msg += f"🔹 {gtitle} | ID: `{gid}`\n"
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
+    async def leave_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != Config.OWNER_ID: return
+        if not context.args:
+            await update.message.reply_text("آیدی گروه رو بده.")
+            return
+        try:
+            target_chat_id = int(context.args[0])
+            await context.bot.leave_chat(target_chat_id)
+            if target_chat_id in self.active_groups:
+                del self.active_groups[target_chat_id]
+            await update.message.reply_text(f"✅ از گروه {target_chat_id} لفت دادم.")
+        except Exception as e:
+            await update.message.reply_text(f"❌ خطا: {e}")
+
     # --- پردازش اصلی پیام‌ها ---
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message: return
@@ -240,7 +264,6 @@ class RoxieBot:
         chat_type = update.effective_chat.type
         user_name = update.effective_user.first_name or "ناشناس"
 
-        # 🔍 تشخیص نقش (برای انگلیسی شدن پرامپت نقش‌ها هم انگلیسی شدند)
         role_tag = "Normal"
         if user_id == Config.OWNER_ID:
             role_tag = "Owner"
@@ -275,7 +298,7 @@ class RoxieBot:
 
         if not user_text: return
 
-        # بن هوشمند
+        # بن هوشمند بدون دستور
         if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP] and update.message.reply_to_message:
             ban_phrases = ["بنش کن", "بن کن", "اخراجش کن", "دیلیتش کن", "بکنش بیرون"]
             if any(phrase in user_text.lower() for phrase in ban_phrases):
@@ -287,7 +310,7 @@ class RoxieBot:
                         return
                     except Exception: pass
 
-        # شرط پاسخ در گروه
+        # شرط چت در گروه: فقط منشن، ریپلای یا اسم "روکسی"
         bot_username = (await context.bot.get_me()).username.lower()
         is_reply_to_bot = (update.message.reply_to_message and update.message.reply_to_message.from_user.id == context.bot.id)
         mentions_bot = any(kw in user_text.lower() for kw in ["روکسی", "roxie", f"@{bot_username}"])
@@ -331,9 +354,12 @@ def main():
     app.add_handler(CommandHandler("unmute", bot.unmute_command))
     app.add_handler(CommandHandler("warn", bot.warn_command))
 
+    app.add_handler(CommandHandler("mygroups", bot.mygroups_command))
+    app.add_handler(CommandHandler("leave", bot.leave_command))
+
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🤖 آماده‌سازی روکسی با ضریب هوشی بالا...")
+    print("🤖 آماده‌سازی روکسی با مدل‌های جدید GPT-OSS...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
