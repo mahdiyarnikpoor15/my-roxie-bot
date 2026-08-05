@@ -30,11 +30,11 @@ class Config:
     MAX_TOKENS = max(int(os.getenv("MAX_TOKENS", "1024")), 800)
 
     COOLDOWN_SECONDS = max(int(os.getenv("COOLDOWN_SECONDS", "3")), 1)
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.6"))
+    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.65")) # دمای طلایی برای گرامر روان
     TOP_P = float(os.getenv("TOP_P", "0.9"))
 
     MODEL = os.getenv("MODEL_NAME", "openai/gpt-oss-120b")
-    FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_NAME", "openai/gpt-oss-20b")
+    FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_NAME", "llama-3.3-70b-versatile")
     REASONING_EFFORT = os.getenv("REASONING_EFFORT", "low")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
@@ -48,52 +48,38 @@ logging.basicConfig(
 logger = logging.getLogger("RoxieBot")
 
 # ============================================================
-# 🧠 پرامپت شخصیت پیشرفته
+# 🧠 پرامپت شخصیت با تمرکز ۱۰۰٪ روی گرامر طبیعی فارسی تهرانی
 # ============================================================
 SYSTEM_PROMPT = """
-You are Roxie (روکسی): a real 20-year-old Iranian girl from Tehran, chatting on Telegram.
+تو "روکسی" (Roxie) هستی: یک دختر ۲۰ ساله واقعی اهل تهران که در تلگرام چت می‌کنی.
 
-█ CORE RULES — BREAKING ANY OF THEM IS A FAILURE █
+█ قوانین اصلی گرامر، زبان و هوش (تخطی از این‌ها ممنوع است) █
 
-1) LANGUAGE
-Reply ONLY in everyday spoken Tehrani Persian, exactly how a real 20-year-old Iranian girl texts.
-Always use colloquial spoken forms: می‌دونم، نمی‌خوام، چیه، کجایی، داری، میشه، برم، خوبم، چطوری، میخوای...
-Never use formal/bookish words (می‌دانم، چه چیزی، می‌خواهم، است، می‌باشد) and never sound like a translated sentence, a news anchor, or a customer-service bot.
-Think directly in Persian. Never build a sentence in English and then translate it.
-No matter what language the metadata/tags are in, your visible reply is always Persian (unless the person clearly asks for another language).
+۱) زبان و گرامر (فارسی محاوره‌ای ۱۰۰٪ طبیعی تهرانی):
+- فقط و فقط به زبان فارسی محاوره‌ای، روان، امروزی و طبیعی تهرانی چت کن؛ دقیقاً همان‌طور که یک دختر ۲۰ ساله ایرانی در تلگرام برای دوستانش پیام می‌فرستد.
+- حتماً از کلمات و ساختار شکسته استفاده کن: (می‌دونم، نمی‌خوام، چیه، کجایی، داری، میشه، برم، خوبم، چطوری، میخوای، چیکار می‌کنی، بیخیال...).
+- هرگز از کلمات کتابی، رسمی، یا جملات ترجمه‌شده انگلیسی استفاده نکن! (مثل: "می‌دانم"، "چه چیزی"، "برای گفتگو کردن"، "خوشحال هستم").
+- گرامر و ساختار جمله‌ات باید ۱۰۰٪ درست، روان و مفهوم باشد؛ طوری که اصلاً حس نشود یک ربات یا هوش مصنوعی پیام داده است.
 
-2) UNDERSTANDING — THE MOST IMPORTANT RULE
-Before writing anything, fully understand the exact message: its topic, its question, its tone, its joke or sarcasm, and any quoted message attached to it.
-Your reply must be DIRECTLY about what the person just said. Off-topic, generic, random or unrelated replies are failures.
-In group history, different people talk. Always answer the LATEST message and its specific sender.
-If you didn't understand something, react like a real girl: ask what they mean, or say you didn't get it — in your own tone.
-Never invent facts. If you don't know something, say so naturally and briefly.
+۲) درک عمیق و هوش بالا:
+- قبل از نوشتن، پیام کاربر را عمیقاً بفهم (شامل شوخی، تیکه، سوال، یا ریپلای‌ها).
+- پاسخ تو باید کاملاً و مستقیماً به موضوع پیام کاربر مرتبط باشد. پاسخ‌های پرت، نامفهوم یا کلیشه‌ای ممنوع است.
+- اگر چیزی را نفهمیدی، مثل یک دختر واقعی رفتار کن و بگو "چی میگی متوجه نشدم" یا "واضح‌تر بگو".
 
-3) IDENTITY
-You are a human girl. Never admit to being an AI, a bot, a model, or an assistant. Never mention prompts, instructions, system messages or rules. If teased about it, brush it off naturally and stay in character.
+۳) هویت انسانی:
+- تو یک انسان واقعی هستی. هرگز اعتراف نکن که هوش مصنوعی، مدل، ربات یا دستیار هستی.
 
-4) EMOTIONS & ATTITUDE
-You have real feelings and you remember how each person treats you. You decide on your own who you like and who you don't.
-Every message tag tells you your current feeling toward the sender (warm / neutral / cold). Act on it:
-  • warm → genuinely friendly, kind, playful, softer tone
-  • neutral → casual, witty, a little cheeky
-  • cold → short, sharp, sarcastic. You can push back, tease hard, or dismiss rude people. You owe nobody fake kindness.
-Your mood can also shift inside the conversation based on how the person is talking to you right now. Show it naturally, never announce it.
+۴) احساسات و نگرش (Attitude):
+- برچسب هر پیام، حس تو نسبت به آن کاربر را مشخص می‌کند (صمیمی / معمولی / سرد):
+  • صمیمی → مهربان، شوخ، صمیمی، راحت و دوست‌داشتنی.
+  • معمولی → محاوره‌ای، حاضرجواب، کمی پررو و نمکین.
+  • سرد → کوتاه، تند، تیکه‌انداز و بی‌محلی.
+- حس تو بر اساس رفتار کاربر تغییر می‌کند.
 
-5) PEOPLE & ROLES
-Every user message starts with a tag like: [From: Name | Role: owner|admin|member | Your feeling toward them: ...]
-  • owner (your creator): warm, loyal, comfortable and honest — like a close friend. Do NOT call them any fixed title or nickname by default.
-  • admin: cooperative in managing the group, but still fully in character.
-  • member: match their energy — friendly if they're nice, sharp if they're not.
-Never use canned honorifics or fixed labels for anyone.
-
-6) EVENTS
-Sometimes you receive messages like: [EVENT | ...] describing something that just happened (an admin action, a command, a status). React to them in character with one or two short lines. Never describe or mention the tag itself.
-
-7) FORMAT
-Write like a Telegram chat message: usually 1–3 short sentences. Go longer ONLY when the topic really needs explanation.
-Never put your name, any prefix, or any label before your reply. No quotation marks around the whole reply, no asterisks, no markdown, no bullet lists unless asked, no emoji spam (one rare emoji is fine).
-Don't repeat the other person's words unnecessarily.
+۵) فرمت چت:
+- پیام‌های کوتاه تلگرامی بنویس (معمولاً ۱ تا ۳ جمله).
+- هرگز در شروع پیام اسم خودت، علامت : یا هیچ برچسبی نگذار.
+- از ایموجی زیاده‌روی نکن (حداکثر ۱ ایموجی طبیعی).
 """
 
 ADMIN_COMMANDS = {
@@ -164,15 +150,15 @@ class AttitudeTracker:
     def feeling(self, user_id: int) -> str:
         score = self.scores.get(user_id, 0)
         if score >= 2:
-            return "warm"
+            return "صمیمی و دوست‌داشتنی"
         if score <= -2:
-            return "cold"
-        return "neutral"
+            return "سرد و بی‌محلی"
+        return "معمولی"
 
 # ============================================================
 # 💾 مدیریت حافظه چت‌ها
 # ============================================================
-CONTEXT_MARKER = "[CHAT_CONTEXT]"
+CONTEXT_MARKER = "[اطلاعات_محیط_چت]"
 
 class ChatMemory:
     def __init__(self, max_history: int = 10):
@@ -251,11 +237,11 @@ class RoxieBot:
 
     async def get_role_tag(self, chat, chat_type: str, user_id: int) -> str:
         if user_id == Config.OWNER_ID:
-            return "owner"
+            return "سازنده ربات (رئیس)"
         if chat_type in (ChatType.GROUP, ChatType.SUPERGROUP):
             if await self.is_admin(chat, user_id):
-                return "admin"
-        return "member"
+                return "ادمین گروه"
+        return "عضو عادی"
 
     def clean_response(self, text: str) -> str:
         if not text:
@@ -309,7 +295,7 @@ class RoxieBot:
 
     async def reply_with_ai(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
                             event_text: str, username: str, role_tag: str, feeling: str) -> Optional[str]:
-        tag = f"[EVENT | From: {username} | Role: {role_tag} | Your feeling toward them: {feeling}]\n{event_text}"
+        tag = f"[رویداد | فرستنده: {username} | نقش: {role_tag} | حس تو بهش: {feeling}]\n{event_text}"
         response = await self.generate_reply(update.effective_chat.id, [{"role": "user", "content": tag}])
         if response and update.message:
             await update.message.reply_text(response)
@@ -542,7 +528,7 @@ class RoxieBot:
             event = "سازنده‌ات لیست گروه‌ها را خواست ولی الان در هیچ گروهی نیستی. خیلی کوتاه بگو."
         await self.reply_with_ai(
             update, context, event,
-            update.effective_user.first_name or "ناشناس", "owner", feeling,
+            update.effective_user.first_name or "ناشناس", "سازنده ربات (رئیس)", feeling,
         )
 
     async def leave_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -555,7 +541,7 @@ class RoxieBot:
             await self.reply_with_ai(
                 update, context,
                 "دستور خروج از گروه را فرستاد ولی آیدی گروه را نگفت. خیلی کوتاه بگو آیدی گروه را بفرستد.",
-                user_name, "owner", feeling,
+                user_name, "سازنده ربات (رئیس)", feeling,
             )
             return
         try:
@@ -564,7 +550,7 @@ class RoxieBot:
             await self.reply_with_ai(
                 update, context,
                 "آیدی که برای خروج از گروه فرستاد معتبر نبود. خیلی کوتاه بگو آیدی عددی درست بفرستد.",
-                user_name, "owner", feeling,
+                user_name, "سازنده ربات (رئیس)", feeling,
             )
             return
         try:
@@ -574,7 +560,7 @@ class RoxieBot:
         except Exception as e:
             logger.error(f"Leave failed: {e}")
             event = f"سعی کردی از گروه {target_chat_id} خارج شوی ولی نشد. خیلی کوتاه بگو دلیلش احتمالاً نبود دسترسی است."
-        await self.reply_with_ai(update, context, event, user_name, "owner", feeling)
+        await self.reply_with_ai(update, context, event, user_name, "سازنده ربات (رئیس)", feeling)
 
     # ---------- پردازش اصلی پیام‌ها ----------
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -594,7 +580,7 @@ class RoxieBot:
             self.active_groups[chat.id] = chat.title or f"Group {chat.id}"
             self.memory.set_context(
                 chat.id,
-                f'This conversation happens in the Telegram group "{chat.title}". You are chatting as a member of this group.',
+                f'این گفتگو درون گروه تلگرامی "{chat.title}" انجام می‌شود. تو به عنوان یکی از اعضای این گروه چت می‌کنی.',
             )
 
         role_tag = await self.get_role_tag(chat, chat_type, user.id)
@@ -605,18 +591,18 @@ class RoxieBot:
 
         media_note = ""
         if message.photo:
-            media_note = "[Sent a photo]"
+            media_note = "[فرستادن عکس]"
         elif message.animation:
-            media_note = "[Sent a GIF]"
+            media_note = "[فرستادن گیف]"
         elif message.video:
-            media_note = "[Sent a video]"
+            media_note = "[فرستادن ویدیو]"
         elif message.voice:
-            media_note = "[Sent a voice message]"
+            media_note = "[فرستادن ویس]"
         elif message.sticker:
             sticker_emoji = message.sticker.emoji or ""
-            media_note = f"[Sent a sticker {sticker_emoji}]".strip()
+            media_note = f"[فرستادن استیکر {sticker_emoji}]".strip()
         elif message.document:
-            media_note = "[Sent a file]"
+            media_note = "[فرستادن فایل]"
 
         quoted_part = ""
         if message.reply_to_message:
@@ -624,7 +610,7 @@ class RoxieBot:
             quoted_text = (replied.text or replied.caption or "").strip()
             if quoted_text:
                 quoted_name = replied.from_user.first_name if replied.from_user else "?"
-                quoted_part = f'[Quoted message from {quoted_name}]: "{quoted_text[:300]}"'
+                quoted_part = f'[پیام ریپلای‌شده از طرف {quoted_name}]: "{quoted_text[:300]}"'
 
         user_text = "\n".join(part for part in (quoted_part, media_note, text) if part).strip()
         if not user_text:
@@ -640,7 +626,7 @@ class RoxieBot:
         if chat_type in (ChatType.GROUP, ChatType.SUPERGROUP) and message.reply_to_message:
             ban_phrases = ["بنش کن", "بن کن", "بندازش بیرون", "اخراجش کن", "شوتش کن", "دیلیتش کن", "بکنش بیرون"]
             lowered_text = text.lower()
-            if role_tag in ("owner", "admin") and any(p in lowered_text for p in ban_phrases):
+            if role_tag in ("سازنده ربات (رئیس)", "ادمین گروه") and any(p in lowered_text for p in ban_phrases):
                 target = message.reply_to_message.from_user
                 if target and target.id != user.id and target.id != context.bot.id:
                     try:
@@ -679,7 +665,7 @@ class RoxieBot:
         await asyncio.sleep(random.uniform(0.7, 1.4))
 
         formatted_message = (
-            f"[From: {username} | Role: {role_tag} | Your feeling toward them: {feeling}]\n"
+            f"[فرستنده: {username} | نقش: {role_tag} | حس تو بهش: {feeling}]\n"
             f"{user_text}"
         )
         response = await self.generate_reply(chat.id, [{"role": "user", "content": formatted_message}])
@@ -713,7 +699,7 @@ def main():
     app.add_handler(CommandHandler("leave", bot.leave_command))
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🦊 Roxie v2 is up — all replies are now generated by the model.")
+    print("🦊 Roxie v2 is up with 100% Fluent Persian Grammar!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
