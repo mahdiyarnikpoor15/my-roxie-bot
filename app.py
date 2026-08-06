@@ -30,8 +30,8 @@ class Config:
     MAX_TOKENS = int(os.getenv("MAX_TOKENS", "150"))
 
     COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "3"))
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.6"))
-    TOP_P = float(os.getenv("TOP_P", "0.9"))
+    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.5"))
+    TOP_P = float(os.getenv("TOP_P", "0.85"))
 
     MODEL = os.getenv("MODEL_NAME", "qwen/qwen3.6-27b")
     FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_NAME", "llama-3.1-8b-instant")
@@ -47,11 +47,11 @@ logging.basicConfig(
 logger = logging.getLogger("RoxieBot")
 
 # ============================================================
-# 🧠 پرامپت بسیار کوتاه و سبک (مطابق خواسته شما)
+# 🧠 پرامپت بسیار کوتاه سیستم
 # ============================================================
 SYSTEM_PROMPT = """
 تو «روکسی» هستی؛ دختر ۲۰ ساله اهل تهران.
-پاسخ‌هایت فقط به فارسی محاوره‌ای اصیل تهرانی، کاملاً روان، صمیمی، کوتاه (۱ تا ۲ جمله) و بدون توضیح اضافه است.
+پاسخ‌هایت فقط به فارسی محاوره‌ای اصیل تهرانی، کاملاً روان، صمیمی، کوتاه (۱ یا ۲ جمله) و بدون توضیح اضافه است.
 همیشه مکالمه را زنده نگه دار و به عنوان یک انسان واقعی رفتار کن.
 """
 
@@ -156,7 +156,7 @@ class ChatMemory:
         self.histories[chat_id] = fresh
 
 # ============================================================
-# 🎭 کلاس اصلی ربات
+# 🎭 کلاس اصلی ربات (با مکانیزم پایتونی بازبینی ۳ باره)
 # ============================================================
 class RoxieBot:
     def __init__(self):
@@ -196,27 +196,21 @@ class RoxieBot:
                 return "ادمین گروه"
         return "عضو عادی"
 
-    # مکانیزم پایتونی پاک‌سازی تگ‌ها و کاراکترهای اضافه
+    # پاک‌سازی کامل تگ‌ها و کوتیشن‌ها
     def clean_response(self, text: str) -> str:
         if not text: return ""
         
-        # ۱. فیلتر احتیاطی تگ‌های تفکر internal مدل (<think>...</think>)
         text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<think>.*$', '', text, flags=re.DOTALL | re.IGNORECASE)
         
         text = text.strip()
-        
-        # ۲. پاک‌سازی کاراکترهای اضافی، کوتیشن و اسم ربات
         text = re.sub(r"^[\s>*_«»\"\u201c\u201d]+", "", text)
         text = re.sub(r"^(?:roxie|roxy|روکسی)\s*[:：]\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"^\s*[:：]\s*", "", text)
-        
-        # ۳. حذف نقل‌قول‌ها
         text = text.strip('"').strip("'").strip("«").strip("»")
         
         return text.strip()
 
-    # مکانیزم درخواست به Groq با فعال‌سازی سیستم تفکر مخفی (Hidden Reasoning)
     def groq_request(self, model: str, history: List[Dict[str, str]]):
         kwargs = {
             "model": model,
@@ -226,20 +220,37 @@ class RoxieBot:
             "max_completion_tokens": Config.MAX_TOKENS,
             "stream": False,
         }
+        return self.groq_client.chat.completions.create(**kwargs)
+
+    # 🟢 مکانیزم پایتونی مرحله دوم: بازبینی و ارزیابی ۳ باره پاسخ
+    async def verify_and_refine_reply(self, user_text: str, draft: str) -> str:
+        verify_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "تو یک ویراستار و منتقد هوشمند هستی. وظیفه داری پاسخ ربات را بررسی کنی تا کاملاً مرتبط با صحبت کاربر باشد. "
+                    "پاسخ باید ۱ جمله کوتاه، فارسی محاوره‌ای اصیل تهرانی و ۱۰۰٪ مربوط به حرف کاربر باشد. "
+                    "اگر پاسخ چرت و پرت، نامربوط، بی‌معنی یا گنگ است، آن را کاملاً اصلاح کن. "
+                    "در نهایت فقط و فقط پاسخ نهایی اصلاح‌شده را بنویس و هیچ متن، تگ یا توضیح دیگری اضافه نکن."
+                )
+            },
+            {
+                "role": "user",
+                "content": f"پیام کاربر: «{user_text}»\nپاسخ پیشنهادی اولیه: «{draft}»\n\nلطفاً پاسخ را ۳ بار ارزیابی کن و در صورت لزوم اصلاح کن. فقط پاسخ نهایی را بفرست:"
+            }
+        ]
         
-        # 🟢 فعال‌سازی سیستم تفکر هوشمند Groq برای Qwen3.6 بدون نمایش تگ‌های think
-        if "qwen" in model.lower():
-            kwargs["reasoning_effort"] = "default"
-            kwargs["reasoning_format"] = "hidden"
-
         try:
-            return self.groq_client.chat.completions.create(**kwargs)
-        except Exception:
-            kwargs.pop("reasoning_format", None)
-            kwargs.pop("reasoning_effort", None)
-            return self.groq_client.chat.completions.create(**kwargs)
+            completion = await asyncio.to_thread(self.groq_request, Config.MODEL, verify_messages)
+            verified = completion.choices[0].message.content or ""
+            cleaned = self.clean_response(verified)
+            return cleaned if cleaned else draft
+        except Exception as e:
+            logger.error(f"Verification pass error: {e}")
+            return draft
 
-    async def generate_reply(self, chat_id: int, new_messages: List[Dict[str, str]]) -> Optional[str]:
+    # 🟢 مکانیزم تولید پاسخ دو مرحله‌ای (Draft -> Verify & Refine)
+    async def generate_reply(self, chat_id: int, new_messages: List[Dict[str, str]], user_text: str) -> Optional[str]:
         async with self.chat_locks[chat_id]:
             for msg in new_messages:
                 self.memory.add_message(chat_id, msg["role"], msg["content"])
@@ -249,26 +260,35 @@ class RoxieBot:
             if Config.FALLBACK_MODEL and Config.FALLBACK_MODEL != Config.MODEL:
                 models_to_try.append(Config.FALLBACK_MODEL)
 
+            draft_reply = None
             for model in models_to_try:
                 try:
                     completion = await asyncio.to_thread(self.groq_request, model, history)
                     choice = completion.choices[0]
                     raw_reply = choice.message.content or ""
-                    
-                    reply = self.clean_response(raw_reply)
-                    if reply:
-                        self.memory.add_message(chat_id, "assistant", reply)
-                        return reply
+                    draft_reply = self.clean_response(raw_reply)
+                    if draft_reply:
+                        break
                 except RateLimitError:
                     await asyncio.sleep(0.5)
                 except Exception as e:
                     logger.error(f"Error on model {model}: {e}")
+
+            if not draft_reply:
+                return None
+
+            # 🔄 مرحله ۲: بازبینی و سنجش ۳ باره پاسخ در پایتون
+            final_reply = await self.verify_and_refine_reply(user_text, draft_reply)
+
+            if final_reply:
+                self.memory.add_message(chat_id, "assistant", final_reply)
+                return final_reply
             return None
 
     async def reply_with_ai(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
                             event_text: str, username: str, role_tag: str, feeling: str) -> Optional[str]:
         tag = f"[رویداد | فرستنده: {username} | حس تو بهش: {feeling}]\n{event_text}"
-        response = await self.generate_reply(update.effective_chat.id, [{"role": "user", "content": tag}])
+        response = await self.generate_reply(update.effective_chat.id, [{"role": "user", "content": tag}], event_text)
         if response and update.message:
             await update.message.reply_text(response)
         elif response:
@@ -401,10 +421,9 @@ class RoxieBot:
         await context.bot.send_chat_action(chat_id=chat.id, action=ChatAction.TYPING)
         await asyncio.sleep(random.uniform(0.5, 1.0))
 
-        # مکانیزم پایتونی تزریق حس به ورودی کاربر
         formatted_message = f"[حس تو به کاربر: {feeling}]\n{user_text}"
         
-        response = await self.generate_reply(chat.id, [{"role": "user", "content": formatted_message}])
+        response = await self.generate_reply(chat.id, [{"role": "user", "content": formatted_message}], user_text)
         if not response: return
 
         if chat_type == ChatType.PRIVATE or is_reply_to_bot or mentions_bot:
@@ -424,7 +443,7 @@ def main():
     app.add_handler(CommandHandler("leave", bot.leave_command))
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🦊 Roxie Bot with Groq Hidden Reasoning is running!")
+    print("🦊 Roxie Bot v6 (Dual-Pass Self-Verification) is running!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
