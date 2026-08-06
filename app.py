@@ -27,16 +27,15 @@ class Config:
     OWNER_ID = int(os.getenv("OWNER_ID", "993028263"))
 
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
-    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "200")) # پاسخ‌های کوتاه و ۱ جمله‌ای
+    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "250"))
 
     COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "3"))
     TEMPERATURE = float(os.getenv("TEMPERATURE", "0.6"))
     TOP_P = float(os.getenv("TOP_P", "0.9"))
 
-    # تنظیم مدل بر روی مدل جدید qwen/qwen3.6-27b
     MODEL = os.getenv("MODEL_NAME", "qwen/qwen3.6-27b")
-    FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_NAME", "openai/gpt-oss-20b")
-    REASONING_EFFORT = os.getenv("REASONING_EFFORT", "low")
+    FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_NAME", "llama-3.1-8b-instant")
+    REASONING_EFFORT = os.getenv("REASONING_EFFORT", "none")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
     ATTITUDE_FILE = os.getenv("ATTITUDE_FILE", "roxie_attitude.json")
@@ -220,15 +219,20 @@ class RoxieBot:
         return text.strip().strip('"').strip()
 
     def groq_request(self, model: str, history: List[Dict[str, str]]):
-        return self.groq_client.chat.completions.create(
-            model=model,
-            messages=history,
-            temperature=Config.TEMPERATURE,
-            top_p=Config.TOP_P,
-            max_completion_tokens=Config.MAX_TOKENS,
-            reasoning_effort=Config.REASONING_EFFORT,
-            stream=False,
-        )
+        kwargs = {
+            "model": model,
+            "messages": history,
+            "temperature": Config.TEMPERATURE,
+            "top_p": Config.TOP_P,
+            "max_completion_tokens": Config.MAX_TOKENS,
+            "stream": False,
+        }
+        # ارسال reasoning_effort فقط در صورت نیاز
+        if Config.REASONING_EFFORT and Config.REASONING_EFFORT.lower() not in ["none", "", "default"]:
+            if "gpt-oss" in model.lower():
+                kwargs["reasoning_effort"] = Config.REASONING_EFFORT
+
+        return self.groq_client.chat.completions.create(**kwargs)
 
     async def generate_reply(self, chat_id: int, new_messages: List[Dict[str, str]]) -> Optional[str]:
         async with self.chat_locks[chat_id]:
@@ -391,7 +395,7 @@ class RoxieBot:
         await context.bot.send_chat_action(chat_id=chat.id, action=ChatAction.TYPING)
         await asyncio.sleep(random.uniform(0.5, 1.0))
 
-        # فرمت تمیز پیام بدون چسباندن برچسب‌های متنی گیج‌کننده درون متن
+        # فرمت تمیز پیام کاربر
         formatted_message = f"{user_text}"
         
         response = await self.generate_reply(chat.id, [{"role": "user", "content": formatted_message}])
@@ -414,7 +418,7 @@ def main():
     app.add_handler(CommandHandler("leave", bot.leave_command))
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🦊 Roxie with qwen/qwen3.6-27b model is up!")
+    print("🦊 Roxie with fixed reasoning_effort is up!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
