@@ -14,6 +14,7 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 )
 from telegram.constants import ChatMemberStatus, ChatType, ChatAction
+from telegram.request import HTTPXRequest
 from groq import Groq, RateLimitError
 
 load_dotenv()
@@ -51,7 +52,7 @@ logger = logging.getLogger("RoxieBot")
 # ============================================================
 SYSTEM_PROMPT = """
 تو «روکسی» هستی؛ دختر ۲۰ ساله اهل تهران.
-پاسخ‌هایت فقط به فارسی محاوره‌ای اصیل تهرانی، کاملاً روان، صمیمی، کوتاه (۱ یا ۲ جمله) و بدون توضیح اضافه است.
+پاسخ‌هایت فقط به فارسی محاوره‌ای اصیل تهرانی، کاملاً روان، صمیمی، کوتاه (۱ تا ۲ جمله) و بدون توضیح اضافه است.
 همیشه مکالمه را زنده نگه دار و به عنوان یک انسان واقعی رفتار کن.
 """
 
@@ -156,7 +157,7 @@ class ChatMemory:
         self.histories[chat_id] = fresh
 
 # ============================================================
-# 🎭 کلاس اصلی ربات (با مکانیزم پایتونی بازبینی ۳ باره)
+# 🎭 کلاس اصلی ربات (با بازبینی ۳ باره پیشرفته و پایداری شبکه)
 # ============================================================
 class RoxieBot:
     def __init__(self):
@@ -164,6 +165,7 @@ class RoxieBot:
         self.attitude = AttitudeTracker(Config.ATTITUDE_FILE)
         self.groq_client = Groq(api_key=Config.GROQ_API_KEY)
         self.last_reply_time: Dict[int, datetime] = defaultdict(lambda: datetime.min)
+        self.last_replies: Dict[int, str] = {} # مکانیزم ضد تکرار
         self.active_groups: Dict[int, str] = {}
         self.chat_locks: Dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
         self.bot_username: str = ""
@@ -196,7 +198,6 @@ class RoxieBot:
                 return "ادمین گروه"
         return "عضو عادی"
 
-    # پاک‌سازی کامل تگ‌ها و کوتیشن‌ها
     def clean_response(self, text: str) -> str:
         if not text: return ""
         
@@ -222,21 +223,31 @@ class RoxieBot:
         }
         return self.groq_client.chat.completions.create(**kwargs)
 
-    # 🟢 مکانیزم پایتونی مرحله دوم: بازبینی و ارزیابی ۳ باره پاسخ
-    async def verify_and_refine_reply(self, user_text: str, draft: str) -> str:
+    # 🟢 مکانیزم پایتونی چک‌لیست ۳ مرحله‌ای ارزیابی و ویراستاری
+    async def verify_and_refine_reply(self, user_text: str, draft: str, chat_id: int) -> str:
+        current_time = datetime.now().strftime("%H:%M")
+        last_bot_reply = self.last_replies.get(chat_id, "")
+        
         verify_messages = [
             {
                 "role": "system",
                 "content": (
-                    "تو یک ویراستار و منتقد هوشمند هستی. وظیفه داری پاسخ ربات را بررسی کنی تا کاملاً مرتبط با صحبت کاربر باشد. "
-                    "پاسخ باید ۱ جمله کوتاه، فارسی محاوره‌ای اصیل تهرانی و ۱۰۰٪ مربوط به حرف کاربر باشد. "
-                    "اگر پاسخ چرت و پرت، نامربوط، بی‌معنی یا گنگ است، آن را کاملاً اصلاح کن. "
-                    "در نهایت فقط و فقط پاسخ نهایی اصلاح‌شده را بنویس و هیچ متن، تگ یا توضیح دیگری اضافه نکن."
+                    "تو یک ویراستار و هوش منتقد ارشد هستی. وظیفه داری پاسخ ربات را طبق چک‌لیست ۳ مرحله‌ای زیر ارزیابی و اصلاح کنی:\n"
+                    "۱. تطبیق موضوعی: پاسخ باید ۱۰۰٪ مربوط به حرف کاربر باشد و جواب مستقیم بدهد.\n"
+                    "۲. روانی و گرامر: تمام کلمات باید فارسی محاوره‌ای اصیل تهرانی، کاملاً روان و بدون کلمات گنگ یا ترجمه‌ای باشند.\n"
+                    "۳. حذف کلمات مخدوش و تکراری: اگر کلمه‌ای بی‌ربط دارد یا شبیه پاسخ قبلی ربات است، آن را بازنویسی کن.\n\n"
+                    "در نهایت فقط و فقط پاسخ نهایی اصلاح‌شده (۱ جمله کوتاه و روان) را بنویس و هیچ متن یا توضیح دیگری اضافه نکن."
                 )
             },
             {
                 "role": "user",
-                "content": f"پیام کاربر: «{user_text}»\nپاسخ پیشنهادی اولیه: «{draft}»\n\nلطفاً پاسخ را ۳ بار ارزیابی کن و در صورت لزوم اصلاح کن. فقط پاسخ نهایی را بفرست:"
+                "content": (
+                    f"[ساعت فعلی: {current_time}]\n"
+                    f"پیام کاربر: «{user_text}»\n"
+                    f"پاسخ قبلی ربات: «{last_bot_reply}»\n"
+                    f"پاسخ پیشنهادی جدید: «{draft}»\n\n"
+                    f"لطفاً طبق چک‌لیست ۳ بار بررسی کن و پاسخ نهایی روان و مرتبط را بفرست:"
+                )
             }
         ]
         
@@ -249,7 +260,7 @@ class RoxieBot:
             logger.error(f"Verification pass error: {e}")
             return draft
 
-    # 🟢 مکانیزم تولید پاسخ دو مرحله‌ای (Draft -> Verify & Refine)
+    # 🟢 مکانیزم دو مرحله‌ای با ثبت پاسخ قبلی جهت جلوگیری از تکرار
     async def generate_reply(self, chat_id: int, new_messages: List[Dict[str, str]], user_text: str) -> Optional[str]:
         async with self.chat_locks[chat_id]:
             for msg in new_messages:
@@ -277,10 +288,11 @@ class RoxieBot:
             if not draft_reply:
                 return None
 
-            # 🔄 مرحله ۲: بازبینی و سنجش ۳ باره پاسخ در پایتون
-            final_reply = await self.verify_and_refine_reply(user_text, draft_reply)
+            # 🔄 ارزیابی ۳ باره چک‌لیستی در پایتون
+            final_reply = await self.verify_and_refine_reply(user_text, draft_reply, chat_id)
 
             if final_reply:
+                self.last_replies[chat_id] = final_reply # ثبت برای جلوگیری از تکرار
                 self.memory.add_message(chat_id, "assistant", final_reply)
                 return final_reply
             return None
@@ -421,7 +433,8 @@ class RoxieBot:
         await context.bot.send_chat_action(chat_id=chat.id, action=ChatAction.TYPING)
         await asyncio.sleep(random.uniform(0.5, 1.0))
 
-        formatted_message = f"[حس تو به کاربر: {feeling}]\n{user_text}"
+        current_time = datetime.now().strftime("%H:%M")
+        formatted_message = f"[ساعت: {current_time} | حس تو به فرستنده: {feeling}]\n{user_text}"
         
         response = await self.generate_reply(chat.id, [{"role": "user", "content": formatted_message}], user_text)
         if not response: return
@@ -432,18 +445,27 @@ class RoxieBot:
             await context.bot.send_message(chat_id=chat.id, text=response)
 
 # ============================================================
-# 🚀 اجرا
+# 🚀 اجرا با تنظیمات مقاوم شبکه (ضد ارور ۵۰۳)
 # ============================================================
 def main():
     bot = RoxieBot()
-    app = ApplicationBuilder().token(Config.TELEGRAM_TOKEN).build()
+    
+    # تنظیم تایم‌آوت شبکه برای جلوگیری از ارور ۵۰۳ پروکسی PythonAnywhere
+    request = HTTPXRequest(
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
+    )
+    
+    app = ApplicationBuilder().token(Config.TELEGRAM_TOKEN).request(request).build()
 
     app.add_handler(CommandHandler("start", bot.start_command))
     app.add_handler(CommandHandler("mygroups", bot.mygroups_command))
     app.add_handler(CommandHandler("leave", bot.leave_command))
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🦊 Roxie Bot v6 (Dual-Pass Self-Verification) is running!")
+    print("🦊 Roxie Bot v7 (Enhanced Verification & Network Resilient) is running!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
