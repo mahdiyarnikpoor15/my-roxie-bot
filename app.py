@@ -19,7 +19,7 @@ from groq import Groq, RateLimitError
 load_dotenv()
 
 # ============================================================
-# ⚙️ تنظیمات بهینه‌شده طبق استاندارد Groq برای Qwen 3.6
+# ⚙️ تنظیمات اصلی
 # ============================================================
 class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM").strip()
@@ -27,18 +27,14 @@ class Config:
     OWNER_ID = int(os.getenv("OWNER_ID", "993028263"))
 
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
-    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "120"))
+    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "150"))
 
     COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "3"))
-    
-    # دما و Top_P استاندارد برای مدل‌های Qwen جهت جلوگیری از کلمات نادرست
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.5"))
-    TOP_P = float(os.getenv("TOP_P", "0.85"))
+    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.6"))
+    TOP_P = float(os.getenv("TOP_P", "0.9"))
 
-    # مدل اصلی qwen/qwen3.6-27b
     MODEL = os.getenv("MODEL_NAME", "qwen/qwen3.6-27b")
     FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_NAME", "llama-3.1-8b-instant")
-    REASONING_EFFORT = os.getenv("REASONING_EFFORT", "none")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
     ATTITUDE_FILE = os.getenv("ATTITUDE_FILE", "roxie_attitude.json")
@@ -51,32 +47,16 @@ logging.basicConfig(
 logger = logging.getLogger("RoxieBot")
 
 # ============================================================
-# 🧠 پرامپت استاندارد Qwen3.6 (الگوی Few-Shot با تکنیک پاس‌کاری)
+# 🧠 پرامپت بسیار کوتاه و سبک (مطابق خواسته شما)
 # ============================================================
 SYSTEM_PROMPT = """
-تو «روکسی» هستی؛ یک دختر ۲۰ ساله اصیل، گرم و حاضرجواب اهل تهران که داری توی تلگرام چت می‌کنی.
-
-شخصیت و طرز صحبت:
-- لحن: کاملاً محاوره‌ای تهرانی، صمیمی، روون و باحال (مثل یک دختر جوان تهرانی در تلگرام).
-- سبک پاسخ: کوتاه (۱ یا ۲ جمله)، زنده و روان.
-- قانون طلایی تداوم مکالمه: همیشه طوری جواب بده که مکالمه زنده بمونه و بن‌بست نشه! وقتی کاربر حرفی می‌زنه یا سوال می‌پرسه، علاوه بر پاسخ دادن، یک سوال کوتاه متقابل بپرس تا چت ادامه پیدا کنه.
-- هرگز از کلمات کتابی، عجیب یا ترجمه‌ای (مثل "سخنت"، "ببخشم"، "خوشحال شدم") استفاده نکن. فقط کلمات عامیانه روزمره (مثل "سلامتی"، "قربونت"، "چطوری"، "چه خبر").
-- تو انسان واقعی هستی. هرگز نگو ربات یا هوش مصنوعی هستی.
-- هیچ تگ تفکری مانند <think> یا متن اضافی ننویس.
-
-نمونه چت‌های الگو (دقیقاً این‌طوری چت کن):
-کاربر: سلام
-روکسی: سلام عزیزم، چطوری؟ چه خبرا؟
-کاربر: چه خبرا؟
-روکسی: سلامتی، خبری نیست! تو چیکارا می‌کنی؟
-کاربر: خوبم مرسی
-روکسی: خداروشکر! امشب برنامه‌ت چیه؟
-کاربر: به چی خندیدی؟
-روکسی: به حرف بامزه‌ت دیگه! مگه خنده نداشت؟
+تو «روکسی» هستی؛ دختر ۲۰ ساله اهل تهران.
+پاسخ‌هایت فقط به فارسی محاوره‌ای اصیل تهرانی، کاملاً روان، صمیمی، کوتاه (۱ تا ۲ جمله) و بدون توضیح اضافه است.
+همیشه مکالمه را زنده نگه دار و به عنوان یک انسان واقعی رفتار کن.
 """
 
 # ============================================================
-# ❤️ سیستم احساسات نسبت به هر کاربر
+# ❤️ مکانیزم پایتونی سیستم احساسات
 # ============================================================
 class AttitudeTracker:
     POSITIVE_WORDS = [
@@ -130,7 +110,7 @@ class AttitudeTracker:
         return "صمیمی و رفیقانه"
 
 # ============================================================
-# 💾 مدیریت حافظه چت‌ها
+# 💾 مکانیزم پایتونی مدیریت حافظه
 # ============================================================
 CONTEXT_MARKER = "[اطلاعات_گروه]"
 
@@ -216,10 +196,11 @@ class RoxieBot:
                 return "ادمین گروه"
         return "عضو عادی"
 
+    # مکانیزم پایتونی پاک‌سازی تگ‌ها و کاراکترهای اضافه
     def clean_response(self, text: str) -> str:
         if not text: return ""
         
-        # ۱. حذف کامل تگ‌های تفکر internal مدل Qwen3.6 (<think>...</think>)
+        # ۱. فیلتر احتیاطی تگ‌های تفکر internal مدل (<think>...</think>)
         text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<think>.*$', '', text, flags=re.DOTALL | re.IGNORECASE)
         
@@ -230,11 +211,12 @@ class RoxieBot:
         text = re.sub(r"^(?:roxie|roxy|روکسی)\s*[:：]\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"^\s*[:：]\s*", "", text)
         
-        # ۳. حذف گیومه‌ها و نقل‌قول‌ها
+        # ۳. حذف نقل‌قول‌ها
         text = text.strip('"').strip("'").strip("«").strip("»")
         
         return text.strip()
 
+    # مکانیزم درخواست به Groq با فعال‌سازی سیستم تفکر مخفی (Hidden Reasoning)
     def groq_request(self, model: str, history: List[Dict[str, str]]):
         kwargs = {
             "model": model,
@@ -244,11 +226,18 @@ class RoxieBot:
             "max_completion_tokens": Config.MAX_TOKENS,
             "stream": False,
         }
-        if Config.REASONING_EFFORT and Config.REASONING_EFFORT.lower() not in ["none", "", "default"]:
-            if "gpt-oss" in model.lower():
-                kwargs["reasoning_effort"] = Config.REASONING_EFFORT
+        
+        # 🟢 فعال‌سازی سیستم تفکر هوشمند Groq برای Qwen3.6 بدون نمایش تگ‌های think
+        if "qwen" in model.lower():
+            kwargs["reasoning_effort"] = "default"
+            kwargs["reasoning_format"] = "hidden"
 
-        return self.groq_client.chat.completions.create(**kwargs)
+        try:
+            return self.groq_client.chat.completions.create(**kwargs)
+        except Exception:
+            kwargs.pop("reasoning_format", None)
+            kwargs.pop("reasoning_effort", None)
+            return self.groq_client.chat.completions.create(**kwargs)
 
     async def generate_reply(self, chat_id: int, new_messages: List[Dict[str, str]]) -> Optional[str]:
         async with self.chat_locks[chat_id]:
@@ -412,7 +401,8 @@ class RoxieBot:
         await context.bot.send_chat_action(chat_id=chat.id, action=ChatAction.TYPING)
         await asyncio.sleep(random.uniform(0.5, 1.0))
 
-        formatted_message = f"{user_text}"
+        # مکانیزم پایتونی تزریق حس به ورودی کاربر
+        formatted_message = f"[حس تو به کاربر: {feeling}]\n{user_text}"
         
         response = await self.generate_reply(chat.id, [{"role": "user", "content": formatted_message}])
         if not response: return
@@ -434,7 +424,7 @@ def main():
     app.add_handler(CommandHandler("leave", bot.leave_command))
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🦊 Roxie v5 (Few-Shot Qwen Optimization) is running!")
+    print("🦊 Roxie Bot with Groq Hidden Reasoning is running!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
