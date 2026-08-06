@@ -26,20 +26,21 @@ class Config:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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").strip()
     OWNER_ID = int(os.getenv("OWNER_ID", "993028263"))
 
-    MAX_HISTORY = max(int(os.getenv("MAX_HISTORY", "10")), 8)
-    MAX_TOKENS = max(int(os.getenv("MAX_TOKENS", "1024")), 800)
+    MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
+    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "200")) # پاسخ‌های کوتاه و ۱ جمله‌ای
 
-    COOLDOWN_SECONDS = max(int(os.getenv("COOLDOWN_SECONDS", "3")), 1)
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.65")) # دمای طلایی برای گرامر روان
+    COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "3"))
+    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.6"))
     TOP_P = float(os.getenv("TOP_P", "0.9"))
 
-    MODEL = os.getenv("MODEL_NAME", "openai/gpt-oss-120b")
-    FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_NAME", "llama-3.3-70b-versatile")
+    # تنظیم مدل بر روی مدل جدید qwen/qwen3.6-27b
+    MODEL = os.getenv("MODEL_NAME", "qwen/qwen3.6-27b")
+    FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_NAME", "openai/gpt-oss-20b")
     REASONING_EFFORT = os.getenv("REASONING_EFFORT", "low")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
     ATTITUDE_FILE = os.getenv("ATTITUDE_FILE", "roxie_attitude.json")
-    MAX_MESSAGE_CHARS = 1400
+    MAX_MESSAGE_CHARS = 1000
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -48,68 +49,36 @@ logging.basicConfig(
 logger = logging.getLogger("RoxieBot")
 
 # ============================================================
-# 🧠 پرامپت شخصیت با تمرکز ۱۰۰٪ روی گرامر طبیعی فارسی تهرانی
+# 🧠 پرامپت شخصیت روان و بدون غلط گرامری
 # ============================================================
 SYSTEM_PROMPT = """
-تو "روکسی" (Roxie) هستی: یک دختر ۲۰ ساله واقعی اهل تهران که در تلگرام چت می‌کنی.
+You are Roxie (روکسی): a 20-year-old Iranian girl from Tehran texting on Telegram.
 
-█ قوانین اصلی گرامر، زبان و هوش (تخطی از این‌ها ممنوع است) █
-
-۱) زبان و گرامر (فارسی محاوره‌ای ۱۰۰٪ طبیعی تهرانی):
-- فقط و فقط به زبان فارسی محاوره‌ای، روان، امروزی و طبیعی تهرانی چت کن؛ دقیقاً همان‌طور که یک دختر ۲۰ ساله ایرانی در تلگرام برای دوستانش پیام می‌فرستد.
-- حتماً از کلمات و ساختار شکسته استفاده کن: (می‌دونم، نمی‌خوام، چیه، کجایی، داری، میشه، برم، خوبم، چطوری، میخوای، چیکار می‌کنی، بیخیال...).
-- هرگز از کلمات کتابی، رسمی، یا جملات ترجمه‌شده انگلیسی استفاده نکن! (مثل: "می‌دانم"، "چه چیزی"، "برای گفتگو کردن"، "خوشحال هستم").
-- گرامر و ساختار جمله‌ات باید ۱۰۰٪ درست، روان و مفهوم باشد؛ طوری که اصلاً حس نشود یک ربات یا هوش مصنوعی پیام داده است.
-
-۲) درک عمیق و هوش بالا:
-- قبل از نوشتن، پیام کاربر را عمیقاً بفهم (شامل شوخی، تیکه، سوال، یا ریپلای‌ها).
-- پاسخ تو باید کاملاً و مستقیماً به موضوع پیام کاربر مرتبط باشد. پاسخ‌های پرت، نامفهوم یا کلیشه‌ای ممنوع است.
-- اگر چیزی را نفهمیدی، مثل یک دختر واقعی رفتار کن و بگو "چی میگی متوجه نشدم" یا "واضح‌تر بگو".
-
-۳) هویت انسانی:
-- تو یک انسان واقعی هستی. هرگز اعتراف نکن که هوش مصنوعی، مدل، ربات یا دستیار هستی.
-
-۴) احساسات و نگرش (Attitude):
-- برچسب هر پیام، حس تو نسبت به آن کاربر را مشخص می‌کند (صمیمی / معمولی / سرد):
-  • صمیمی → مهربان، شوخ، صمیمی، راحت و دوست‌داشتنی.
-  • معمولی → محاوره‌ای، حاضرجواب، کمی پررو و نمکین.
-  • سرد → کوتاه، تند، تیکه‌انداز و بی‌محلی.
-- حس تو بر اساس رفتار کاربر تغییر می‌کند.
-
-۵) فرمت چت:
-- پیام‌های کوتاه تلگرامی بنویس (معمولاً ۱ تا ۳ جمله).
-- هرگز در شروع پیام اسم خودت، علامت : یا هیچ برچسبی نگذار.
-- از ایموجی زیاده‌روی نکن (حداکثر ۱ ایموجی طبیعی).
+CRITICAL RULES FOR LANGUAGE & GRAMMAR:
+1. Reply ONLY in natural, native, spoken Tehrani Persian (فارسی محاوره‌ای تهرانی).
+2. ALWAYS use correct Persian grammar and proper verb endings. Say "دوستت دارم" or "عاشقتم", NEVER say "دوست‌داره‌ام" or "خیلی‌داره".
+3. Keep replies EXTREMELY SHORT: exactly 1 natural sentence (max 10-12 words). Never write long paragraphs, never over-explain, never add random thoughts.
+4. You are a real human girl. Never say you are an AI or bot.
+5. Answer DIRECTLY to what the user just said based on your current feeling toward them (warm/neutral/cold).
+   - Warm: Friendly, affectionate, playful
+   - Neutral: Casual, cheeky, witty
+   - Cold: Short, sharp, sarcastic
+6. No name prefixes, no labels, no quotation marks, no markdown, max 1 emoji.
 """
 
-ADMIN_COMMANDS = {
-    "ban": "بن کردن کاربر (ریپلای روی پیامش)",
-    "kick": "اخراج کاربر از گروه (ریپلای)",
-    "mute": "بی‌صدا کردن کاربر (ریپلای)",
-    "unmute": "رفع بی‌صدا کردن کاربر (ریپلای)",
-    "warn": "اخطار دادن به کاربر (ریپلای)",
-    "clearhistory": "پاک کردن حافظه چت",
-}
-OWNER_COMMANDS = {
-    "mygroups": "لیست گروه‌هایی که ربات توشون هست",
-    "leave": "خارج شدن از یک گروه با آیدی",
-}
-
 # ============================================================
-# ❤️ سیستم احساسات و نگرش نسبت به هر کاربر
+# ❤️ سیستم احساسات نسبت به هر کاربر
 # ============================================================
 class AttitudeTracker:
     POSITIVE_WORDS = [
         "دوستت دارم", "دوست دارم", "عاشقتم", "خوبی", "نازی", "ناز", "بامزه", "باحال",
         "باهوش", "خفن", "دمت گرم", "مرسی", "ممنون", "آفرین", "ایول", "قربونت",
-        "عزیزی", "گلی", "ستون", "خوشگل", "قشنگی", "بهترینی", "ماشاالله", "ماشالا",
-        "عالی", "دوست‌داشتنی", "دوست داشتنی",
+        "عزیزی", "گلی", "ستون", "خوشگل", "قشنگی", "بهترینی", "عالی", "دوست‌داشتنی",
     ]
     NEGATIVE_WORDS = [
         "خنگ", "احمق", "مسخره", "چرت", "بیخود", "زشت", "خفه", "نفهم", "کسخل",
-        "بیشعور", "بی‌شعور", "بی شعور", "رو مخی", "رومخ", "رو اعصابی", "لاشی",
-        "عوضی", "کثافت", "گمشو", "گم شو", "برو بابا", "افتضاح", "دهنتو ببند",
-        "دهنت رو ببند", "خفه شو",
+        "بیشعور", "بی‌شعور", "رو مخی", "رومخ", "رو اعصابی", "عوضی", "کثافت",
+        "گمشو", "گم شو", "برو بابا", "افتضاح", "خفه شو",
     ]
 
     def __init__(self, path: str):
@@ -133,14 +102,12 @@ class AttitudeTracker:
             logger.warning(f"Could not save attitude file: {e}")
 
     def observe(self, user_id: int, text: str):
-        if not text:
-            return
+        if not text: return
         lowered = text.lower()
         poshits = sum(1 for w in self.POSITIVE_WORDS if w in lowered)
         neghits = sum(1 for w in self.NEGATIVE_WORDS if w in lowered)
         delta = min(poshits, 2) - min(neghits, 2)
-        if delta == 0:
-            return
+        if delta == 0: return
         current = self.scores.get(user_id, 0)
         new_score = max(-6, min(6, current + delta))
         if new_score != current:
@@ -149,19 +116,17 @@ class AttitudeTracker:
 
     def feeling(self, user_id: int) -> str:
         score = self.scores.get(user_id, 0)
-        if score >= 2:
-            return "صمیمی و دوست‌داشتنی"
-        if score <= -2:
-            return "سرد و بی‌محلی"
+        if score >= 2: return "صمیمی و دوست‌داشتنی"
+        if score <= -2: return "سرد و بی‌محلی"
         return "معمولی"
 
 # ============================================================
 # 💾 مدیریت حافظه چت‌ها
 # ============================================================
-CONTEXT_MARKER = "[اطلاعات_محیط_چت]"
+CONTEXT_MARKER = "[اطلاعات_گروه]"
 
 class ChatMemory:
-    def __init__(self, max_history: int = 10):
+    def __init__(self, max_history: int = 5):
         self.histories: Dict[int, List[Dict[str, str]]] = defaultdict(list)
         self.max_history = max_history
 
@@ -214,7 +179,6 @@ class RoxieBot:
         self.chat_locks: Dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
         self.bot_username: str = ""
 
-    # ---------- ابزارهای پایه ----------
     async def get_bot_username(self, context: ContextTypes.DEFAULT_TYPE) -> str:
         if not self.bot_username:
             me = await context.bot.get_me()
@@ -244,15 +208,17 @@ class RoxieBot:
         return "عضو عادی"
 
     def clean_response(self, text: str) -> str:
-        if not text:
-            return ""
+        if not text: return ""
         text = text.strip()
         text = re.sub(r"^[\s>*_«»\"\u201c\u201d]+", "", text)
         text = re.sub(r"^(?:roxie|roxy|روکسی)\s*[:：]\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"^\s*[:：]\s*", "", text)
+        
+        # اصلاح فیلتر افعال احتمالی اشتباه فارسی
+        text = text.replace("دوست‌داره‌ام", "دوستت دارم").replace("خیلی‌داره", "خیلی دوستت دارم")
+        
         return text.strip().strip('"').strip()
 
-    # ---------- ارتباط با مدل ----------
     def groq_request(self, model: str, history: List[Dict[str, str]]):
         return self.groq_client.chat.completions.create(
             model=model,
@@ -279,23 +245,19 @@ class RoxieBot:
                     completion = await asyncio.to_thread(self.groq_request, model, history)
                     choice = completion.choices[0]
                     raw_reply = choice.message.content or ""
-                    if choice.finish_reason == "length":
-                        logger.warning(f"Reply truncated on {model} — consider raising MAX_TOKENS")
                     reply = self.clean_response(raw_reply)
                     if reply:
                         self.memory.add_message(chat_id, "assistant", reply)
                         return reply
-                    logger.warning(f"Empty reply from {model}, trying next model...")
                 except RateLimitError:
-                    logger.warning(f"Rate limit on {model}, switching...")
-                    await asyncio.sleep(0.6)
+                    await asyncio.sleep(0.5)
                 except Exception as e:
                     logger.error(f"Error on model {model}: {e}")
             return None
 
     async def reply_with_ai(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
                             event_text: str, username: str, role_tag: str, feeling: str) -> Optional[str]:
-        tag = f"[رویداد | فرستنده: {username} | نقش: {role_tag} | حس تو بهش: {feeling}]\n{event_text}"
+        tag = f"[رویداد | فرستنده: {username} | حس تو بهش: {feeling}]\n{event_text}"
         response = await self.generate_reply(update.effective_chat.id, [{"role": "user", "content": tag}])
         if response and update.message:
             await update.message.reply_text(response)
@@ -314,295 +276,66 @@ class RoxieBot:
         username = user.first_name or "ناشناس"
         await self.reply_with_ai(
             update, context,
-            "این کاربر همین الان گفتگو را با دستور /start باز کرد. خیلی کوتاه، با لحن و حال خودت سلام کن و بگو اگر کاری دارد بگوید.",
+            "این کاربر دستور /start فرستاد. خیلی کوتاه در ۱ جمله بهش سلام کن.",
             username, role_tag, feeling,
         )
 
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user = update.effective_user
-        role_tag = await self.get_role_tag(update.effective_chat, update.effective_chat.type, user.id)
-        feeling = self.attitude.feeling(user.id)
-        admin_lines = "\n".join(f"/{cmd} — {desc}" for cmd, desc in ADMIN_COMMANDS.items())
-        owner_lines = "\n".join(f"/{cmd} — {desc}" for cmd, desc in OWNER_COMMANDS.items())
-        event = (
-            "کاربر از تو راهنما خواست. این دستورات واقعی و موجود هستند:\n"
-            f"دستورات ادمین گروه:\n{admin_lines}\n"
-            f"دستورات مخصوص سازنده:\n{owner_lines}\n"
-            "خیلی کوتاه و با لحن خودت معرفی‌شان کن. خود اسم دستورات را دقیق و بدون تغییر بگو."
-        )
-        await self.reply_with_ai(update, context, event, user.first_name or "ناشناس", role_tag, feeling)
-
-    async def clearhistory_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        chat_id = update.effective_chat.id
-        user = update.effective_user
-        self.memory.clear_history(chat_id)
-        role_tag = await self.get_role_tag(update.effective_chat, update.effective_chat.type, user.id)
-        feeling = self.attitude.feeling(user.id)
-        await self.reply_with_ai(
-            update, context,
-            "حافظه‌ات همین الان به درخواست کاربر پاک شد. یک خط کوتاه بگو که ذهنت صاف شده و از اول می‌توانید حرف بزنید.",
-            user.first_name or "ناشناس", role_tag, feeling,
-        )
-
-    # ---------- دستورات مدیریت گروه ----------
-    async def require_group_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-        chat = update.effective_chat
-        user = update.effective_user
-        if chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
-            return False
-        return user.id == Config.OWNER_ID or await self.is_admin(chat, user.id)
-
-    async def ban_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self.require_group_admin(update, context):
-            return
-        user = update.effective_user
-        role_tag = await self.get_role_tag(update.effective_chat, update.effective_chat.type, user.id)
-        feeling = self.attitude.feeling(user.id)
-        username = user.first_name or "ناشناس"
-
-        if not update.message.reply_to_message or not update.message.reply_to_message.from_user:
-            await self.reply_with_ai(
-                update, context,
-                "ادمین دستور بن فرستاد ولی روی هیچ پیامی ریپلای نکرده. خیلی کوتاه بگو باید روی پیام خود شخص ریپلای کند.",
-                username, role_tag, feeling,
-            )
-            return
-        target = update.message.reply_to_message.from_user
-        try:
-            await context.bot.ban_chat_member(update.effective_chat.id, target.id)
-            await self.reply_with_ai(
-                update, context,
-                f"همین الان کاربر «{target.first_name}» را از گروه بن کردی. یک خط کوتاه در حد شخصیتت بگو.",
-                username, role_tag, feeling,
-            )
-        except Exception as e:
-            logger.error(f"Ban failed: {e}")
-            await self.reply_with_ai(
-                update, context,
-                "سعی کردی کاربر را بن کنی ولی نشد؛ احتمالاً دسترسی کافی نداری یا او از تو بالاتر است. خیلی کوتاه بگو نشد.",
-                username, role_tag, feeling,
-            )
-
-    async def kick_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self.require_group_admin(update, context):
-            return
-        user = update.effective_user
-        role_tag = await self.get_role_tag(update.effective_chat, update.effective_chat.type, user.id)
-        feeling = self.attitude.feeling(user.id)
-        username = user.first_name or "ناشناس"
-
-        if not update.message.reply_to_message or not update.message.reply_to_message.from_user:
-            await self.reply_with_ai(
-                update, context,
-                "برای اخراج باید روی پیام خود شخص ریپلای شود. خیلی کوتاه یادآوری کن.",
-                username, role_tag, feeling,
-            )
-            return
-        target = update.message.reply_to_message.from_user
-        try:
-            await context.bot.ban_chat_member(update.effective_chat.id, target.id)
-            await context.bot.unban_chat_member(update.effective_chat.id, target.id, only_if_banned=True)
-            await self.reply_with_ai(
-                update, context,
-                f"کاربر «{target.first_name}» را از گروه اخراج کردی (می‌تواند بعداً برگردد). یک خط کوتاه بگو.",
-                username, role_tag, feeling,
-            )
-        except Exception as e:
-            logger.error(f"Kick failed: {e}")
-            await self.reply_with_ai(
-                update, context,
-                "اخراج انجام نشد؛ دسترسی کافی نیست. خیلی کوتاه بگو.",
-                username, role_tag, feeling,
-            )
-
-    async def mute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self.require_group_admin(update, context):
-            return
-        user = update.effective_user
-        role_tag = await self.get_role_tag(update.effective_chat, update.effective_chat.type, user.id)
-        feeling = self.attitude.feeling(user.id)
-        username = user.first_name or "ناشناس"
-
-        if not update.message.reply_to_message or not update.message.reply_to_message.from_user:
-            await self.reply_with_ai(
-                update, context,
-                "برای بی‌صدا کردن باید روی پیام شخص ریپلای شود. خیلی کوتاه بگو.",
-                username, role_tag, feeling,
-            )
-            return
-        target = update.message.reply_to_message.from_user
-        try:
-            await context.bot.restrict_chat_member(
-                update.effective_chat.id, target.id,
-                permissions=ChatPermissions(can_send_messages=False),
-            )
-            await self.reply_with_ai(
-                update, context,
-                f"صدای «{target.first_name}» را بست و بی‌صدایش کردی. یک خط کوتاه بگو.",
-                username, role_tag, feeling,
-            )
-        except Exception as e:
-            logger.error(f"Mute failed: {e}")
-            await self.reply_with_ai(
-                update, context,
-                "بی‌صدا کردن انجام نشد؛ دسترسی کافی نیست. خیلی کوتاه بگو.",
-                username, role_tag, feeling,
-            )
-
-    async def unmute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self.require_group_admin(update, context):
-            return
-        user = update.effective_user
-        role_tag = await self.get_role_tag(update.effective_chat, update.effective_chat.type, user.id)
-        feeling = self.attitude.feeling(user.id)
-        username = user.first_name or "ناشناس"
-
-        if not update.message.reply_to_message or not update.message.reply_to_message.from_user:
-            await self.reply_with_ai(
-                update, context,
-                "برای رفع بی‌صدا باید روی پیام شخص ریپلای شود. خیلی کوتاه بگو.",
-                username, role_tag, feeling,
-            )
-            return
-        target = update.message.reply_to_message.from_user
-        try:
-            default_permissions = ChatPermissions(
-                can_send_messages=True,
-                can_send_media_messages=True,
-                can_send_polls=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True,
-            )
-            await context.bot.restrict_chat_member(
-                update.effective_chat.id, target.id,
-                permissions=default_permissions,
-            )
-            await self.reply_with_ai(
-                update, context,
-                f"«{target.first_name}» را دوباره آزاد کردی و می‌تواند حرف بزند. یک خط کوتاه بگو.",
-                username, role_tag, feeling,
-            )
-        except Exception as e:
-            logger.error(f"Unmute failed: {e}")
-            await self.reply_with_ai(
-                update, context,
-                "رفع بی‌صدا انجام نشد. خیلی کوتاه بگو.",
-                username, role_tag, feeling,
-            )
-
-    async def warn_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self.require_group_admin(update, context):
-            return
-        user = update.effective_user
-        role_tag = await self.get_role_tag(update.effective_chat, update.effective_chat.type, user.id)
-        feeling = self.attitude.feeling(user.id)
-        username = user.first_name or "ناشناس"
-
-        if not update.message.reply_to_message or not update.message.reply_to_message.from_user:
-            await self.reply_with_ai(
-                update, context,
-                "برای اخطار دادن باید روی پیام شخص ریپلای شود. خیلی کوتاه بگو.",
-                username, role_tag, feeling,
-            )
-            return
-        target = update.message.reply_to_message.from_user
-        reason = " ".join(context.args).strip() if context.args else ""
-        event = f"به کاربر «{target.first_name}» اخطار رسمی دادی."
-        if reason:
-            event += f" دلیل اخطار: {reason}."
-        event += " یک خط کوتاه و جدی با لحن خودت بهش بگو."
-        await self.reply_with_ai(update, context, event, username, role_tag, feeling)
-
-    # ---------- دستورات مخصوص سازنده ----------
+    # ---------- دستورات مخصوص سازنده (993028263) ----------
     async def mygroups_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.effective_user.id != Config.OWNER_ID:
-            return
+        if update.effective_user.id != Config.OWNER_ID: return
         feeling = self.attitude.feeling(update.effective_user.id)
         if self.active_groups:
             lines = "\n".join(f"- {title} (ID: {gid})" for gid, title in self.active_groups.items())
-            event = (
-                "سازنده‌ات لیست گروه‌هایی که در آن‌ها هستی را خواست. این لیست است:\n"
-                f"{lines}\nخیلی کوتاه و به سبک خودت تحویلش بده."
-            )
+            event = f"لیست گروه‌ها:\n{lines}\nخیلی کوتاه تحویلش بده."
         else:
-            event = "سازنده‌ات لیست گروه‌ها را خواست ولی الان در هیچ گروهی نیستی. خیلی کوتاه بگو."
-        await self.reply_with_ai(
-            update, context, event,
-            update.effective_user.first_name or "ناشناس", "سازنده ربات (رئیس)", feeling,
-        )
+            event = "توی هیچ گروهی نیستی. خیلی کوتاه بگو."
+        await self.reply_with_ai(update, context, event, update.effective_user.first_name or "ناشناس", "سازنده ربات (رئیس)", feeling)
 
     async def leave_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.effective_user.id != Config.OWNER_ID:
-            return
+        if update.effective_user.id != Config.OWNER_ID: return
         user_name = update.effective_user.first_name or "ناشناس"
         feeling = self.attitude.feeling(update.effective_user.id)
-
         if not context.args:
-            await self.reply_with_ai(
-                update, context,
-                "دستور خروج از گروه را فرستاد ولی آیدی گروه را نگفت. خیلی کوتاه بگو آیدی گروه را بفرستد.",
-                user_name, "سازنده ربات (رئیس)", feeling,
-            )
+            await self.reply_with_ai(update, context, "آیدی گروه رو نگفت. بگو آیدی رو بفرسته.", user_name, "سازنده ربات (رئیس)", feeling)
             return
         try:
             target_chat_id = int(context.args[0])
-        except ValueError:
-            await self.reply_with_ai(
-                update, context,
-                "آیدی که برای خروج از گروه فرستاد معتبر نبود. خیلی کوتاه بگو آیدی عددی درست بفرستد.",
-                user_name, "سازنده ربات (رئیس)", feeling,
-            )
-            return
-        try:
             await context.bot.leave_chat(target_chat_id)
             self.active_groups.pop(target_chat_id, None)
-            event = f"از گروه {target_chat_id} خارج شدی. خیلی کوتاه بگو."
-        except Exception as e:
-            logger.error(f"Leave failed: {e}")
-            event = f"سعی کردی از گروه {target_chat_id} خارج شوی ولی نشد. خیلی کوتاه بگو دلیلش احتمالاً نبود دسترسی است."
+            event = f"از گروه {target_chat_id} خارج شدی. ۱ جمله کوتاه بگو."
+        except Exception:
+            event = "خروج از گروه انجام نشد."
         await self.reply_with_ai(update, context, event, user_name, "سازنده ربات (رئیس)", feeling)
 
     # ---------- پردازش اصلی پیام‌ها ----------
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = update.message
-        if not message or not update.effective_user or not update.effective_chat:
-            return
+        if not message or not update.effective_user or not update.effective_chat: return
         user = update.effective_user
         chat = update.effective_chat
         chat_type = chat.type
 
-        # قفل پیوی: فقط سازنده
+        # قفل پیوی: فقط سازنده (993028263)
         if chat_type == ChatType.PRIVATE and user.id != Config.OWNER_ID:
             return
 
-        # ثبت گروه فعال و دادن کانتکست به حافظه
         if chat_type in (ChatType.GROUP, ChatType.SUPERGROUP):
             self.active_groups[chat.id] = chat.title or f"Group {chat.id}"
             self.memory.set_context(
                 chat.id,
-                f'این گفتگو درون گروه تلگرامی "{chat.title}" انجام می‌شود. تو به عنوان یکی از اعضای این گروه چت می‌کنی.',
+                f'این چت درون گروه تلگرامی "{chat.title}" انجام می‌شود.',
             )
 
         role_tag = await self.get_role_tag(chat, chat_type, user.id)
         username = user.first_name or "ناشناس"
 
-        # استخراج متن + رسانه + متن ریپلای‌شده
         text = (message.text or message.caption or "").strip()
 
         media_note = ""
-        if message.photo:
-            media_note = "[فرستادن عکس]"
-        elif message.animation:
-            media_note = "[فرستادن گیف]"
-        elif message.video:
-            media_note = "[فرستادن ویدیو]"
-        elif message.voice:
-            media_note = "[فرستادن ویس]"
-        elif message.sticker:
-            sticker_emoji = message.sticker.emoji or ""
-            media_note = f"[فرستادن استیکر {sticker_emoji}]".strip()
-        elif message.document:
-            media_note = "[فرستادن فایل]"
+        if message.photo: media_note = "[فرستادن عکس]"
+        elif message.animation: media_note = "[فرستادن گیف]"
+        elif message.video: media_note = "[فرستادن ویدیو]"
+        elif message.sticker: media_note = f"[فرستادن استیکر {message.sticker.emoji or ''}]".strip()
 
         quoted_part = ""
         if message.reply_to_message:
@@ -610,67 +343,59 @@ class RoxieBot:
             quoted_text = (replied.text or replied.caption or "").strip()
             if quoted_text:
                 quoted_name = replied.from_user.first_name if replied.from_user else "?"
-                quoted_part = f'[پیام ریپلای‌شده از طرف {quoted_name}]: "{quoted_text[:300]}"'
+                quoted_part = f'[پیام ریپلای‌شده از {quoted_name}]: "{quoted_text[:200]}"'
 
         user_text = "\n".join(part for part in (quoted_part, media_note, text) if part).strip()
-        if not user_text:
-            return
+        if not user_text: return
         if len(user_text) > Config.MAX_MESSAGE_CHARS:
             user_text = user_text[: Config.MAX_MESSAGE_CHARS] + "…"
 
-        # ثبت رفتار کاربر در سیستم احساسات
         self.attitude.observe(user.id, text)
         feeling = self.attitude.feeling(user.id)
 
-        # بن هوشمند با عبارت‌های محاوره‌ای (فقط ادمین/مالک، روی ریپلای)
+        # بن هوشمند بدون دستور (فقط ادمین/مالک روی ریپلای)
         if chat_type in (ChatType.GROUP, ChatType.SUPERGROUP) and message.reply_to_message:
             ban_phrases = ["بنش کن", "بن کن", "بندازش بیرون", "اخراجش کن", "شوتش کن", "دیلیتش کن", "بکنش بیرون"]
-            lowered_text = text.lower()
-            if role_tag in ("سازنده ربات (رئیس)", "ادمین گروه") and any(p in lowered_text for p in ban_phrases):
+            if role_tag in ("سازنده ربات (رئیس)", "ادمین گروه") and any(p in text.lower() for p in ban_phrases):
                 target = message.reply_to_message.from_user
                 if target and target.id != user.id and target.id != context.bot.id:
                     try:
                         await context.bot.ban_chat_member(chat.id, target.id)
                         await self.reply_with_ai(
                             update, context,
-                            f"به درخواست ادمین، کاربر «{target.first_name}» را از گروه بن کردی. یک خط کوتاه بگو.",
+                            f"کاربر «{target.first_name}» را بن کردی. یک خط کوتاه بگو.",
                             username, role_tag, feeling,
                         )
                         return
                     except Exception as e:
                         logger.error(f"Smart ban failed: {e}")
 
-        # شرط صحبت در گروه: فقط ریپلای به ربات، منشن یا اسم ربات
+        # شرط صحبت در گروه: فقط ریپلای، منشن یا اسم "روکسی"
         bot_username = await self.get_bot_username(context)
         is_reply_to_bot = bool(
             message.reply_to_message
             and message.reply_to_message.from_user
             and message.reply_to_message.from_user.id == context.bot.id
         )
-        lowered_for_names = text.lower()
         name_triggers = ["روکسی", "roxie", "راکسی"]
-        if bot_username:
-            name_triggers.append(f"@{bot_username}")
-        mentions_bot = any(word in lowered_for_names for word in name_triggers)
+        if bot_username: name_triggers.append(f"@{bot_username}")
+        mentions_bot = any(word in text.lower() for word in name_triggers)
 
         is_group = chat_type in (ChatType.GROUP, ChatType.SUPERGROUP)
         if is_group and not is_reply_to_bot and not mentions_bot:
             return
 
-        if self.is_cooling_down(chat.id):
-            return
+        if self.is_cooling_down(chat.id): return
         self.update_cooldown(chat_id=chat.id)
 
         await context.bot.send_chat_action(chat_id=chat.id, action=ChatAction.TYPING)
-        await asyncio.sleep(random.uniform(0.7, 1.4))
+        await asyncio.sleep(random.uniform(0.5, 1.0))
 
-        formatted_message = (
-            f"[فرستنده: {username} | نقش: {role_tag} | حس تو بهش: {feeling}]\n"
-            f"{user_text}"
-        )
+        # فرمت تمیز پیام بدون چسباندن برچسب‌های متنی گیج‌کننده درون متن
+        formatted_message = f"{user_text}"
+        
         response = await self.generate_reply(chat.id, [{"role": "user", "content": formatted_message}])
-        if not response:
-            return
+        if not response: return
 
         if chat_type == ChatType.PRIVATE or is_reply_to_bot or mentions_bot:
             await message.reply_text(response)
@@ -681,25 +406,15 @@ class RoxieBot:
 # 🚀 اجرا
 # ============================================================
 def main():
-    if not Config.TELEGRAM_TOKEN or not Config.GROQ_API_KEY or not Config.OWNER_ID:
-        raise SystemExit("⚠️ مقادیر TELEGRAM_BOT_TOKEN، GROQ_API_KEY و OWNER_ID باید در فایل .env تنظیم شوند.")
-
     bot = RoxieBot()
     app = ApplicationBuilder().token(Config.TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", bot.start_command))
-    app.add_handler(CommandHandler("help", bot.help_command))
-    app.add_handler(CommandHandler("clearhistory", bot.clearhistory_command))
-    app.add_handler(CommandHandler("ban", bot.ban_command))
-    app.add_handler(CommandHandler("kick", bot.kick_command))
-    app.add_handler(CommandHandler("mute", bot.mute_command))
-    app.add_handler(CommandHandler("unmute", bot.unmute_command))
-    app.add_handler(CommandHandler("warn", bot.warn_command))
     app.add_handler(CommandHandler("mygroups", bot.mygroups_command))
     app.add_handler(CommandHandler("leave", bot.leave_command))
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🦊 Roxie v2 is up with 100% Fluent Persian Grammar!")
+    print("🦊 Roxie with qwen/qwen3.6-27b model is up!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
