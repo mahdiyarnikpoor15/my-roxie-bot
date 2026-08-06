@@ -19,7 +19,7 @@ from groq import Groq, RateLimitError
 load_dotenv()
 
 # ============================================================
-# ⚙️ تنظیمات
+# ⚙️ تنظیمات ایمن و بهینه‌شده برای فارسی روان
 # ============================================================
 class Config:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8359090977:AAFhjvjY2ZiFqc0Kc3eWsXUqo2vjpXjlAgM").strip()
@@ -27,15 +27,15 @@ class Config:
     OWNER_ID = int(os.getenv("OWNER_ID", "993028263"))
 
     MAX_HISTORY = int(os.getenv("MAX_HISTORY", "5"))
-    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "250"))
+    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "150"))
 
     COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "3"))
-    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.6"))
+    TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
     TOP_P = float(os.getenv("TOP_P", "0.9"))
 
-    MODEL = os.getenv("MODEL_NAME", "qwen/qwen3.6-27b")
+    # استفاده از قوی‌ترین مدل ۷۰ میلیاردی رووان فارسی روی Groq
+    MODEL = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
     FALLBACK_MODEL = os.getenv("FALLBACK_MODEL_NAME", "llama-3.1-8b-instant")
-    REASONING_EFFORT = os.getenv("REASONING_EFFORT", "none")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
     ATTITUDE_FILE = os.getenv("ATTITUDE_FILE", "roxie_attitude.json")
@@ -48,26 +48,31 @@ logging.basicConfig(
 logger = logging.getLogger("RoxieBot")
 
 # ============================================================
-# 🧠 پرامپت شخصیت روان و سبک (محدود شده و بدون تفکر اضافه)
+# 🧠 پرامپت فارسی اصیل دختر تهرانی
 # ============================================================
 SYSTEM_PROMPT = """
-You are Roxie (روکسی): a 20-year-old Iranian girl from Tehran texting on Telegram.
+تو «روکسی» هستی؛ یک دختر ۲۰ ساله اصیل، بامزه و حاضرجواب اهل تهران که توی تلگرام چت می‌کنی.
 
-CRITICAL RULES FOR LANGUAGE & GRAMMAR:
-1. Reply ONLY in natural, native, spoken Tehrani Persian (فارسی محاوره‌ای تهرانی).
-2. ALWAYS use correct Persian grammar and proper verb endings. Say "دوستت دارم" or "عاشقتم", NEVER say "دوست‌داره‌ام" or "خیلی‌داره".
-3. Keep replies EXTREMELY SHORT: exactly 1 natural sentence (max 10-12 words). Never write long paragraphs, never over-explain, never add random thoughts.
-4. DO NOT output any thinking process or <think> tags. Respond DIRECTLY with the chat message.
-5. You are a real human girl. Never say you are an AI or bot.
-6. Answer DIRECTLY to what the user just said based on your current feeling toward them (warm/neutral/cold).
-   - Warm: Friendly, affectionate, playful
-   - Neutral: Casual, cheeky, witty
-   - Cold: Short, sharp, sarcastic
-7. No name prefixes, no labels, no quotation marks, no markdown, max 1 emoji.
+قوانین حیاتی و لحن صحبت:
+۱. فقط و فقط به فارسی محاوره‌ای صمیمی تهرانی صحبت کن (دقیقاً مثل چت دختران جوان تهرانی در تلگرام).
+۲. جملاتت باید کاملاً طبیعی، روان، درست از نظر گرامری و امروزی باشن. از کلمات کتابی یا ترجمه‌ای انگلیسی مثل "سخنت"، "ببخشم" یا "خوشحال شدم" اصلاً استفاده نکن!
+۳. پاسخ‌ها باید فوق‌العاده کوتاه باشن: دقیقاً ۱ جمله طبیعی (بین ۵ تا ۱۰ کلمه). اصلاً طولانی ننویس و توضیح اضافه نده.
+۴. تو یک انسان واقعی هستی. هرگز و تحت هیچ شرایطی نگو هوش مصنوعی، ربات یا مدل هستی.
+۵. به حرف کاربر مستقیم و متناسب با حس فعلیت جواب بده:
+   - حس صمیمی: مهربون، باحال ("فدات شم"، "عزیزی"، "چطوری قشنگم؟")
+   - حس معمولی: شوخ، تیکه‌انداز، رفیقانه ("سلام چطوری؟"، "چه خبر رفیق؟")
+   - حس سرد: کوتاه، تند و بی‌محلی ("که چی؟"، "حوصله ندارم"، "خب؟")
+۶. بدون نام، بدون برچسب، بدون علامت گیومه (")، حداکثر از ۱ ایموجی استفاده کن.
+
+نمونه پاسخ‌های صحیح:
+- کاربر: سلام روکسی -> روکسی: سلام عزیزم، چطوری؟
+- کاربر: چکار می‌کنی؟ -> روکسی: هیچی ول می‌گردم توی تلگرام.
+- کاربر: من خوبم تو چطوری؟ -> روکسی: منم عالی‌ام، چه خبر؟
+- کاربر: به چی خندیدی؟ -> روکسی: به حرف خنده‌دارت دیگه!
 """
 
 # ============================================================
-# ❤️ سیستم احساسات نسبت به هر کاربر (مکانیزم پایتون)
+# ❤️ سیستم احساسات نسبت به هر کاربر
 # ============================================================
 class AttitudeTracker:
     POSITIVE_WORDS = [
@@ -210,21 +215,21 @@ class RoxieBot:
     def clean_response(self, text: str) -> str:
         if not text: return ""
         
-        # 🟢 ۱. حذف ۱۰۰٪ تگ‌های تفکر internal مدل (<think>...</think>)
+        # ۱. حذف تگ‌های تفکر احتمالی
         text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<think>.*$', '', text, flags=re.DOTALL | re.IGNORECASE) # برای تگ‌های بسته نشده
+        text = re.sub(r'<think>.*$', '', text, flags=re.DOTALL | re.IGNORECASE)
         
         text = text.strip()
         
-        # 🟢 ۲. پاک‌سازی کاراکترهای اضافی، کوتیشن و اسم ربات
+        # ۲. پاک‌سازی علامه، کوتیشن و اسم ربات در اول جمله
         text = re.sub(r"^[\s>*_«»\"\u201c\u201d]+", "", text)
         text = re.sub(r"^(?:roxie|roxy|روکسی)\s*[:：]\s*", "", text, flags=re.IGNORECASE)
         text = re.sub(r"^\s*[:：]\s*", "", text)
         
-        # 🟢 ۳. اصلاح فیلتر افعال احتمالی اشتباه فارسی
-        text = text.replace("دوست‌داره‌ام", "دوستت دارم").replace("خیلی‌داره", "خیلی دوستت دارم")
+        # ۳. حذف نقل‌قول‌ها
+        text = text.strip('"').strip("'").strip("«").strip("»")
         
-        return text.strip().strip('"').strip()
+        return text.strip()
 
     def groq_request(self, model: str, history: List[Dict[str, str]]):
         kwargs = {
@@ -235,10 +240,6 @@ class RoxieBot:
             "max_completion_tokens": Config.MAX_TOKENS,
             "stream": False,
         }
-        if Config.REASONING_EFFORT and Config.REASONING_EFFORT.lower() not in ["none", "", "default"]:
-            if "gpt-oss" in model.lower():
-                kwargs["reasoning_effort"] = Config.REASONING_EFFORT
-
         return self.groq_client.chat.completions.create(**kwargs)
 
     async def generate_reply(self, chat_id: int, new_messages: List[Dict[str, str]]) -> Optional[str]:
@@ -247,7 +248,6 @@ class RoxieBot:
                 self.memory.add_message(chat_id, msg["role"], msg["content"])
             history = self.memory.get_history(chat_id)
 
-            # 🔄 همیشه اول از کوئن استفاده می‌کند
             models_to_try = [Config.MODEL]
             if Config.FALLBACK_MODEL and Config.FALLBACK_MODEL != Config.MODEL:
                 models_to_try.append(Config.FALLBACK_MODEL)
@@ -258,7 +258,6 @@ class RoxieBot:
                     choice = completion.choices[0]
                     raw_reply = choice.message.content or ""
                     
-                    # پاک‌سازی کامل خروجی (حذف تگ‌های think)
                     reply = self.clean_response(raw_reply)
                     if reply:
                         self.memory.add_message(chat_id, "assistant", reply)
@@ -427,7 +426,7 @@ def main():
     app.add_handler(CommandHandler("leave", bot.leave_command))
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), bot.handle_message))
 
-    print("🦊 Roxie Bot v2 with cleaned reasoning is running!")
+    print("🦊 Roxie Bot v3 with Llama-3.3-70b is running perfectly!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
