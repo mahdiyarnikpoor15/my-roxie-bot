@@ -1,4 +1,3 @@
-cat << 'EOF' > app.py
 import os
 import re
 import base64
@@ -133,4 +132,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-EOF
