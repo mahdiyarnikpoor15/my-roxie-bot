@@ -3,6 +3,7 @@ import re
 import base64
 import logging
 import asyncio
+import time
 from collections import defaultdict
 from typing import Dict, List, Any
 
@@ -21,7 +22,7 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 OWNER_ID = int(os.getenv("OWNER_ID", "993028263"))
-MODEL_NAME = os.getenv("MODEL_NAME", "stealth/ox-alpha")
+MODEL_NAME = os.getenv("MODEL_NAME", "z-ai/glm-5.3-flash")
 MAX_HISTORY = 20
 
 BOT_USERNAME = ""
@@ -32,7 +33,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Roxie")
 
-# کلاینت OpenRouter
 ai_client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
@@ -41,7 +41,7 @@ ai_client = AsyncOpenAI(
 )
 
 # ============================================================
-# 🧠 پرامپت محاوره‌ای دقیق و چند نمونه مکالمه (Few-Shot)
+# 🧠 پرامپت دقیق و چند نمونه مکالمه
 # ============================================================
 SYSTEM_PROMPT = """
 تو «روکسی» هستی؛ یک دختر باهوش، اهل گیم و انیمه.
@@ -76,7 +76,6 @@ def add_to_history(chat_id: int, role: str, content: Any):
 def clean_reply(text: str) -> str:
     if not text:
         return ""
-    # حذف تگ‌های تفکر مدل‌های استدلالی
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'<think>.*$', '', text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'^(?:roxie|روکسی)\s*[:：]\s*', '', text, flags=re.IGNORECASE)
@@ -102,13 +101,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not message or not user or not chat:
         return
 
-    # قفل چت خصوصی برای غیر مالک
     if chat.type == ChatType.PRIVATE and user.id != OWNER_ID:
         return
 
     text = (message.text or message.caption or "").strip()
 
-    # شرایط فعال شدن در گروه
     if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
         is_reply = bool(
             message.reply_to_message
@@ -123,11 +120,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_reply and not is_called:
             return
 
-    # آماده‌سازی پیام به شکل طبیعی (بدون براکت‌های سخت)
     user_prompt = text if text else "یک تصویر فرستادم، نظرت چیه؟"
     content_list: List[Dict[str, Any]] = [{"type": "text", "text": user_prompt}]
 
-    # پردازش تصویر در صورت وجود
     photo_obj = None
     if message.photo:
         photo_obj = message.photo[-1]
@@ -152,7 +147,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply_text = ""
     try:
-        # ارسال با تنظیم سطح استدلال سبک (effort: low) و دمای مناسب چت
         response = await ai_client.chat.completions.create(
             model=MODEL_NAME,
             messages=get_history(chat.id),
@@ -178,28 +172,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Telegram error: {e}")
 
-# ============================================================
-# 🛡️ پایداری و استارت
-# ============================================================
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.warning(f"Telegram glitch: {context.error}")
+    logger.warning(f"Telegram Proxy/Network glitch (Auto-handled): {context.error}")
 
 async def post_init(application):
     global BOT_USERNAME
-    me = await application.bot.get_me()
-    BOT_USERNAME = (me.username or "").lower()
-    logger.info(f"Bot online as @{BOT_USERNAME}")
+    try:
+        me = await application.bot.get_me()
+        BOT_USERNAME = (me.username or "").lower()
+        logger.info(f"Bot online as @{BOT_USERNAME}")
+    except Exception as e:
+        logger.warning(f"Could not fetch bot username at startup: {e}")
 
-def main():
-    if not TELEGRAM_TOKEN or not OPENROUTER_API_KEY:
-        print("❌ مقادیر .env را کامل کنید.")
-        return
-
+# ============================================================
+# 🚀 اجرای اصلی با سیستم بازیابی خودکار (Auto-Reconnect Loop)
+# ============================================================
+def start_bot():
     request = HTTPXRequest(
-        connect_timeout=40.0,
-        read_timeout=40.0,
-        write_timeout=40.0,
-        pool_timeout=40.0,
+        connect_timeout=60.0,
+        read_timeout=60.0,
+        write_timeout=60.0,
+        pool_timeout=60.0,
     )
 
     app = (
@@ -213,8 +206,26 @@ def main():
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), handle_message))
     app.add_error_handler(error_handler)
 
-    print(f"🤖 روکسی با بهینه‌سازی کامل چت محاوره‌ای فعال شد.")
-    app.run_polling(drop_pending_updates=True)
+    print(f"🤖 روکسی با مدل {MODEL_NAME} فعال و آماده کار شد.")
+    
+    # تلاش نامحدود برای عبور از نوسانات پروکسی ۵۰۳
+    app.run_polling(
+        drop_pending_updates=True,
+        bootstrap_retries=-1,
+        timeout=20,
+    )
+
+def main():
+    if not TELEGRAM_TOKEN or not OPENROUTER_API_KEY:
+        print("❌ مقادیر .env را کامل کنید.")
+        return
+
+    while True:
+        try:
+            start_bot()
+        except Exception as e:
+            logger.error(f"Bot crashed due to proxy: {e}. Restarting in 5 seconds...")
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
