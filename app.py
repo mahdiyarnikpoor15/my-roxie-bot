@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from telegram.constants import ChatType, ChatAction
+from telegram.request import HTTPXRequest
 from openai import AsyncOpenAI
 
 load_dotenv()
@@ -23,13 +24,14 @@ OWNER_ID = int(os.getenv("OWNER_ID", "993028263"))
 MODEL_NAME = os.getenv("MODEL_NAME", "stealth/ox-alpha")
 MAX_HISTORY = 20
 
+BOT_USERNAME = ""  # ذخیره یک‌باره برای جلوگیری از نوسان شبکه
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger("Roxie")
 
-# کلاینت بدون محدودیت تایم‌اوت و کاملاً آزاد
 ai_client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
@@ -37,12 +39,12 @@ ai_client = AsyncOpenAI(
 )
 
 # ============================================================
-# 🧠 پرامپت دقیق و کاملاً طبیعی
+# 🧠 پرامپت دقیق و طبیعی
 # ============================================================
 SYSTEM_PROMPT = "تو روکسی هستی و عاشق گیم و انیمه. به زبان فارسی صحبت می‌کنی. پاسخ‌هایت کوتاه و متناسب با لحن طرف مقابل است."
 
 # ============================================================
-# 💾 حافظه گفتگو
+# 💾 مدیریت حافظه چت
 # ============================================================
 chat_histories: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
 
@@ -60,13 +62,11 @@ def add_to_history(chat_id: int, role: str, content: Any):
 def clean_reply(text: str) -> str:
     if not text:
         return ""
-    # حذف تگ‌های تفکر مدل‌های استدلالی
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'<think>.*$', '', text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'^(?:roxie|روکسی)\s*[:：]\s*', '', text, flags=re.IGNORECASE)
     return text.strip()
 
-# زنده نگه‌داشتن علامت Typing تلگرام در زمان فکر کردن مدل
 async def keep_typing(chat_id: int, bot):
     try:
         while True:
@@ -78,7 +78,7 @@ async def keep_typing(chat_id: int, bot):
         pass
 
 # ============================================================
-# 📩 پردازش و پاسخ به پیام‌ها
+# 📩 پردازش پیام‌ها
 # ============================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
@@ -87,34 +87,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not message or not user or not chat:
         return
 
-    # قفل چت خصوصی (فقط مالک)
+    # قفل پیوی برای غیر از شما
     if chat.type == ChatType.PRIVATE and user.id != OWNER_ID:
         return
 
     text = (message.text or message.caption or "").strip()
 
-    # شرایط فعال شدن در گروه: ریپلای، منشن، یا صدا زدن اسم روکسی
+    # شرط فعالیت در گروه
     if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
-        bot_user = await context.bot.get_me()
         is_reply = bool(
             message.reply_to_message
             and message.reply_to_message.from_user
-            and message.reply_to_message.from_user.id == bot_user.id
+            and message.reply_to_message.from_user.id == context.bot.id
         )
         triggers = ["روکسی", "roxie"]
-        if bot_user.username:
-            triggers.append(f"@{bot_user.username.lower()}")
+        if BOT_USERNAME:
+            triggers.append(f"@{BOT_USERNAME}")
         is_called = any(t in text.lower() for t in triggers)
 
         if not is_reply and not is_called:
             return
 
-    # آماده‌سازی محتوا
+    # ارسال متن و عکس
     sender_name = user.first_name or "کاربر"
     user_prompt = f"[{sender_name}]: {text}" if text else f"[{sender_name} یک تصویر ارسال کرد]"
     content_list: List[Dict[str, Any]] = [{"type": "text", "text": user_prompt}]
 
-    # پردازش تصویر در صورت وجود
     photo_obj = None
     if message.photo:
         photo_obj = message.photo[-1]
@@ -135,7 +133,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     add_to_history(chat.id, "user", content_list)
 
-    # اجرای تسک تایپینگ در حین پردازش مدل
     typing_task = asyncio.create_task(keep_typing(chat.id, context.bot))
 
     reply_text = ""
@@ -147,29 +144,58 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raw_text = response.choices[0].message.content or ""
         reply_text = clean_reply(raw_text)
     except Exception as e:
-        # در صورت خطا فقط لاگ می‌شود و هیچ پیام خطایی در چت داده نمی‌شود
         logger.error(f"OpenRouter Error: {e}")
         reply_text = ""
     finally:
         typing_task.cancel()
 
-    # ارسال پاسخ در صورت وجود خروجی
     if reply_text:
         add_to_history(chat.id, "assistant", reply_text)
-        await message.reply_text(reply_text)
+        try:
+            await message.reply_text(reply_text)
+        except Exception as e:
+            logger.error(f"Telegram send error: {e}")
 
 # ============================================================
-# 🚀 اجرای اصلی برنامه
+# 🛡️ سیستم مدیریت ارورهای ناگهانی تلگرام
+# ============================================================
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.warning(f"Telegram connection glitch (auto-recovered): {context.error}")
+
+async def post_init(application):
+    global BOT_USERNAME
+    me = await application.bot.get_me()
+    BOT_USERNAME = (me.username or "").lower()
+    logger.info(f"Bot initialized as @{BOT_USERNAME}")
+
+# ============================================================
+# 🚀 اجرای اصلی
 # ============================================================
 def main():
     if not TELEGRAM_TOKEN or not OPENROUTER_API_KEY:
-        print("❌ مقادیر TELEGRAM_BOT_TOKEN و OPENROUTER_API_KEY را بررسی کنید.")
+        print("❌ مقادیر TELEGRAM_BOT_TOKEN و OPENROUTER_API_KEY را در .env قرار دهید.")
         return
 
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), handle_message))
+    # تنظیم اتصال پایدار با تایم‌اوت مناسب برای سرور PythonAnywhere
+    request = HTTPXRequest(
+        connect_timeout=40.0,
+        read_timeout=40.0,
+        write_timeout=40.0,
+        pool_timeout=40.0,
+    )
 
-    print(f"🤖 روکسی با مدل {MODEL_NAME} فعال شد.")
+    app = (
+        ApplicationBuilder()
+        .token(TELEGRAM_TOKEN)
+        .request(request)
+        .post_init(post_init)
+        .build()
+    )
+
+    app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), handle_message))
+    app.add_error_handler(error_handler)
+
+    print(f"🤖 روکسی با مدل {MODEL_NAME} فعال و آماده کار شد.")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
