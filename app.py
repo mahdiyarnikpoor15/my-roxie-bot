@@ -41,7 +41,7 @@ ai_client = AsyncOpenAI(
 )
 
 # ============================================================
-# 🧠 پرامپت دقیق و چند نمونه مکالمه
+# 🧠 پرامپت دقیق، طبیعی و نمونه مکالمات
 # ============================================================
 SYSTEM_PROMPT = """
 تو «روکسی» هستی؛ یک دختر باهوش، اهل گیم و انیمه.
@@ -58,7 +58,7 @@ SYSTEM_PROMPT = """
 """
 
 # ============================================================
-# 💾 مدیریت حافظه گفتگو
+# 💾 مدیریت حافظه چت
 # ============================================================
 chat_histories: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
 
@@ -101,11 +101,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not message or not user or not chat:
         return
 
+    # قفل پیوی (فقط پاسخ به شما)
     if chat.type == ChatType.PRIVATE and user.id != OWNER_ID:
         return
 
     text = (message.text or message.caption or "").strip()
 
+    # شرایط فعال شدن در گروه
     if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
         is_reply = bool(
             message.reply_to_message
@@ -173,7 +175,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Telegram error: {e}")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.warning(f"Telegram Proxy/Network glitch (Auto-handled): {context.error}")
+    logger.warning(f"Telegram connection glitch: {context.error}")
 
 async def post_init(application):
     global BOT_USERNAME
@@ -185,7 +187,7 @@ async def post_init(application):
         logger.warning(f"Could not fetch bot username at startup: {e}")
 
 # ============================================================
-# 🚀 اجرای اصلی با سیستم بازیابی خودکار (Auto-Reconnect Loop)
+# 🚀 اجرای ربات با پایداری دائمی و ضدکرش
 # ============================================================
 def start_bot():
     request = HTTPXRequest(
@@ -206,25 +208,19 @@ def start_bot():
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), handle_message))
     app.add_error_handler(error_handler)
 
-    print(f"🤖 روکسی با مدل {MODEL_NAME} فعال و آماده کار شد.")
-    
-    # تلاش نامحدود برای عبور از نوسانات پروکسی ۵۰۳
-    app.run_polling(
-        drop_pending_updates=True,
-        bootstrap_retries=-1,
-        timeout=20,
-    )
+    print(f"🤖 روکسی با مدل {MODEL_NAME} و توکن جدید فعال شد.")
+    app.run_polling(drop_pending_updates=True, bootstrap_retries=-1, timeout=20)
 
 def main():
     if not TELEGRAM_TOKEN or not OPENROUTER_API_KEY:
-        print("❌ مقادیر .env را کامل کنید.")
+        print("❌ لطفاً توکن تلگرام و کلید OpenRouter را در .env قرار دهید.")
         return
 
     while True:
         try:
             start_bot()
         except Exception as e:
-            logger.error(f"Bot crashed due to proxy: {e}. Restarting in 5 seconds...")
+            logger.error(f"Restarting in 5s: {e}")
             time.sleep(5)
 
 if __name__ == "__main__":
